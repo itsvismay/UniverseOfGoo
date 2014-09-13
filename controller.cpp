@@ -56,7 +56,7 @@ void Controller::mouseClicked(double x, double y)
         sim_->addParticle(x, y);
         break;
     case SimParameters::CM_ADDSAW:
-        sim_->addSaw(x,y);
+        sim_->addSaw(x, y);
         break;
     }
 }

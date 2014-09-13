@@ -14,7 +14,7 @@ SimParameters::SimParameters()
     maxSpringStrain = 0.2;
     dampingStiffness = 1.0;
 
-    clickMode = CM_ADDPARTICLE;
+    clickMode = CM_ADDPARTICLE, CM_ADDSAW;
     particleMass = 1.0;
     maxSpringDist = 0.25;
     particleFixed = false;

@@ -20,6 +20,8 @@ void Simulation::render()
 
     int numcirclewedges = 20;
 
+    double sawBaseRadius = 0.1;
+
     renderLock_.lock();
     {
         for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
@@ -35,6 +37,22 @@ void Simulation::render()
                 for(int i=0; i<=numcirclewedges; i++)
                 {
                     glVertex2f(it->pos[0] + radius * cos(2*PI*i/numcirclewedges),
+                               it->pos[1] + radius * sin(2*PI*i/numcirclewedges));
+                }
+            }
+            glEnd();
+        }
+
+        for(vector<Saw>::iterator it = saws_.begin(); it != saws_.end(); ++it)
+        {
+            double radius = sawBaseRadius;
+            glColor3f(0, 1,0);
+            glBegin(GL_TRIANGLE_FAN);
+            {
+                glVertex2f(it->pos[0], it->pos[1]);
+                for(int i=0; i<=numcirclewedges; i++)
+                {
+                    glVertex2f(it->pos[0]+ radius * cos(2*PI*i/numcirclewedges),
                                it->pos[1] + radius * sin(2*PI*i/numcirclewedges));
                 }
             }
@@ -69,7 +87,12 @@ void Simulation::clearScene()
     renderLock_.unlock();
 }
 
-void Simulation::addSaw(double , double )
+void Simulation::addSaw(double x, double y)
 {
-
+    renderLock_.lock();
+    {
+        Vector2d newpos(x,y);
+        saws_.push_back(Saw(newpos, params_.sawRadius));
+    }
+    renderLock_.unlock();
 }

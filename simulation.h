@@ -25,6 +25,19 @@ public:
     bool fixed;
 };
 
+struct Saw
+{
+public:
+    Saw(Eigen::Vector2d pos, bool sawRadius) : pos(pos), radius(sawRadius)
+    {
+        vel.setZero();
+    }
+    Eigen::Vector2d pos;
+    Eigen::Vector2d vel;
+    double radius;
+    bool fixed;
+};
+
 class Simulation
 {
 public:
@@ -43,6 +56,7 @@ private:
 
     double time_;
     std::vector<Particle> particles_;
+    std::vector<Saw> saws_;
 };
 
 #endif // SIMULATION_H
