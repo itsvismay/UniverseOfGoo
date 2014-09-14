@@ -19,5 +19,5 @@ SimParameters::SimParameters()
     maxSpringDist = 0.25;
     particleFixed = false;
 
-    sawRadius= 0.1;
+    sawRadius= 0.01;
 }

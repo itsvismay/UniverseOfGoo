@@ -28,7 +28,7 @@ public:
 struct Saw
 {
 public:
-    Saw(Eigen::Vector2d pos, bool sawRadius) : pos(pos), radius(sawRadius)
+    Saw(Eigen::Vector2d pos, double sawRadius) : pos(pos), radius(sawRadius)
     {
         vel.setZero();
     }
@@ -36,6 +36,19 @@ public:
     Eigen::Vector2d vel;
     double radius;
     bool fixed;
+};
+
+struct Spring
+{
+public:
+    Spring(Eigen::Vector2d p1, Eigen::Vector2d p2): p1(p1), p2(p2)
+    {
+        vel.setZero();
+    }
+    Eigen::Vector2d p1;
+    Eigen::Vector2d p2;
+    Eigen::Vector2d vel;
+
 };
 
 class Simulation
@@ -55,6 +68,7 @@ private:
     QMutex renderLock_;
 
     double time_;
+    std::vector< std::vector< Particle > > ConnectedParticles_;
     std::vector<Particle> particles_;
     std::vector<Saw> saws_;
 };

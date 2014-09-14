@@ -1,4 +1,5 @@
-﻿#include "simulation.h"
+﻿
+#include "simulation.h"
 #include <QGLWidget>
 #include "simparameters.h"
 #include <iostream>
@@ -19,8 +20,6 @@ void Simulation::render()
     double pulsespeed = 50.0;
 
     int numcirclewedges = 20;
-
-    double sawBaseRadius = 0.1;
 
     renderLock_.lock();
     {
@@ -45,7 +44,7 @@ void Simulation::render()
 
         for(vector<Saw>::iterator it = saws_.begin(); it != saws_.end(); ++it)
         {
-            double radius = sawBaseRadius;
+            double radius = it->radius;
             glColor3f(0, 1,0);
             glBegin(GL_TRIANGLE_FAN);
             {
@@ -58,6 +57,19 @@ void Simulation::render()
             }
             glEnd();
         }
+
+        for(int i=0; i< ConnectedParticles_.size(); i++)
+        {
+            for(vector <Particle>::iterator it = ConnectedParticles_[i].begin(); it!=ConnectedParticles_[i].end(); ++it)
+            {
+                glColor3f(0,0,1);
+                glBegin(GL_LINES);
+                {
+                    glVertex2f(particles_[i].pos[0], particles_[i].pos[1]);
+                    glVertex2f(it->pos[0], it->pos[1]);
+                }
+            }
+        }
     }
     renderLock_.unlock();
 }
@@ -65,6 +77,7 @@ void Simulation::render()
 void Simulation::takeSimulationStep()
 {
     time_ += params_.timeStep;
+    cout <<"HERE";
 }
 
 void Simulation::addParticle(double x, double y)
@@ -74,6 +87,29 @@ void Simulation::addParticle(double x, double y)
         Vector2d newpos(x,y);
         double mass = params_.particleMass;
         particles_.push_back(Particle(newpos, mass, params_.particleFixed));
+
+        vector<Particle> a;
+        ConnectedParticles_.push_back(a);
+        if(particles_.size() != ConnectedParticles_.size()){
+            cout << "ERROR 1"<<"\n";
+        }
+
+        //if distance between new particle and an existing particle is within maxSpringDistance,
+        //connect those particles with a spring
+        double maxSpringDistSqd = params_.maxSpringDist*params_.maxSpringDist;
+        for(int i = 0; i<particles_.size()-1; i++)
+        {
+            double x1x2 = (particles_[i].pos[0] - x);
+            double y1y2 = (particles_[i].pos[1] - y);
+            if(maxSpringDistSqd >= ((x1x2*x1x2)+(y1y2*y1y2)))
+            {
+                ConnectedParticles_[i].push_back(particles_[particles_.size()-1]);
+                ConnectedParticles_[particles_.size()-1].push_back(particles_[i]);
+            }
+
+        }
+
+
     }
     renderLock_.unlock();
 }
@@ -83,6 +119,8 @@ void Simulation::clearScene()
     renderLock_.lock();
     {
         particles_.clear();
+        saws_.clear();
+        ConnectedParticles_.clear();
     }
     renderLock_.unlock();
 }
@@ -92,7 +130,8 @@ void Simulation::addSaw(double x, double y)
     renderLock_.lock();
     {
         Vector2d newpos(x,y);
-        saws_.push_back(Saw(newpos, params_.sawRadius));
+        double rad = params_.sawRadius;
+        saws_.push_back(Saw(newpos, rad));
     }
     renderLock_.unlock();
 }
