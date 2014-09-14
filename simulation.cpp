@@ -58,16 +58,13 @@ void Simulation::render()
             glEnd();
         }
 
-        for(int i=0; i< ConnectedParticles_.size(); i++)
+        for(vector<SpringComponent>::iterator it = springs_.begin(); it!=springs_.end(); ++it)
         {
-            for(vector <Particle>::iterator it = ConnectedParticles_[i].begin(); it!=ConnectedParticles_[i].end(); ++it)
+            glColor3f(0,0,1);
+            glBegin(GL_LINES);
             {
-                glColor3f(0,0,1);
-                glBegin(GL_LINES);
-                {
-                    glVertex2f(particles_[i].pos[0], particles_[i].pos[1]);
-                    glVertex2f(it->pos[0], it->pos[1]);
-                }
+                glVertex2f(it->p1.pos[0], it->p1.pos[1]);
+                glVertex2f(it->p2.pos[0], it->p2.pos[1]);
             }
         }
     }
@@ -77,7 +74,6 @@ void Simulation::render()
 void Simulation::takeSimulationStep()
 {
     time_ += params_.timeStep;
-    cout <<"HERE";
 }
 
 void Simulation::addParticle(double x, double y)
@@ -88,12 +84,6 @@ void Simulation::addParticle(double x, double y)
         double mass = params_.particleMass;
         particles_.push_back(Particle(newpos, mass, params_.particleFixed));
 
-        vector<Particle> a;
-        ConnectedParticles_.push_back(a);
-        if(particles_.size() != ConnectedParticles_.size()){
-            cout << "ERROR 1"<<"\n";
-        }
-
         //if distance between new particle and an existing particle is within maxSpringDistance,
         //connect those particles with a spring
         double maxSpringDistSqd = params_.maxSpringDist*params_.maxSpringDist;
@@ -103,8 +93,7 @@ void Simulation::addParticle(double x, double y)
             double y1y2 = (particles_[i].pos[1] - y);
             if(maxSpringDistSqd >= ((x1x2*x1x2)+(y1y2*y1y2)))
             {
-                ConnectedParticles_[i].push_back(particles_[particles_.size()-1]);
-                ConnectedParticles_[particles_.size()-1].push_back(particles_[i]);
+                springs_.push_back(SpringComponent(particles_[i], particles_[particles_.size()-1]));
             }
 
         }
@@ -120,7 +109,7 @@ void Simulation::clearScene()
     {
         particles_.clear();
         saws_.clear();
-        ConnectedParticles_.clear();
+        springs_.clear();
     }
     renderLock_.unlock();
 }

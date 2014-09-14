@@ -38,16 +38,14 @@ public:
     bool fixed;
 };
 
-struct Spring
+struct SpringComponent
 {
 public:
-    Spring(Eigen::Vector2d p1, Eigen::Vector2d p2): p1(p1), p2(p2)
+    SpringComponent(Particle p1, Particle p2): p1(p1), p2(p2)
     {
-        vel.setZero();
     }
-    Eigen::Vector2d p1;
-    Eigen::Vector2d p2;
-    Eigen::Vector2d vel;
+    Particle p1;
+    Particle p2;
 
 };
 
@@ -69,6 +67,7 @@ private:
 
     double time_;
     std::vector< std::vector< Particle > > ConnectedParticles_;
+    std::vector<SpringComponent> springs_;
     std::vector<Particle> particles_;
     std::vector<Saw> saws_;
 };
