@@ -108,8 +108,24 @@ void Simulation::takeSimulationStep()
         {
             if(!(it->fixed))
             {
-                it->pos[1]= it->vel[1]*params_.timeStep + (0.5)*params_.gravityG*(params_.timeStep*params_.timeStep);
-                it->vel[1] = it->vel[1]+ params_.timeStep*params_.gravityG;
+                if(it->pos[1] > 0)
+                {
+                    double initVelY=  it->vel[1];
+                    //df =  di+ Vi*t + 0.5*a*t^2
+                    it->pos[1] = it->pos[1] + initVelY*params_.timeStep + 0.5*(params_.timeStep*params_.timeStep*params_.gravityG);
+                    //Vf =Vi + a*t
+                    it->vel[1] = initVelY + params_.timeStep*params_.gravityG;
+                }
+                else
+                {
+                    //change direction of momentum of ball
+                    double initVelY= -1*(it->vel[1]);
+                    //df =  di+ Vi*t + 0.5*a*t^2
+                    it->pos[1] = it->pos[1] + initVelY*params_.timeStep + 0.5*(params_.timeStep*params_.timeStep*params_.gravityG);
+                    //Vf =Vi + a*t
+                    it->vel[1] = initVelY + params_.timeStep*params_.gravityG;
+                }
+
             }
         }
     }
