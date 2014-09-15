@@ -15,6 +15,7 @@ Simulation::Simulation(const SimParameters &params) : params_(params), time_(0)
 
 void Simulation::render()
 {
+
     double baseradius = 0.02;
     double pulsefactor = 0.1;
     double pulsespeed = 50.0;
@@ -23,13 +24,40 @@ void Simulation::render()
 
     renderLock_.lock();
     {
+        if(params_.F_FLOOR)
+        {
+            //draw floor
+            glColor3f(0.5, 0.5, 0.5);
+            glBegin(GL_QUADS);
+            {
+                glVertex2f(-1,0);
+                glVertex2f(1,0);
+                glVertex2f(1,-1);
+                glVertex2f(-1,-1);
+            }
+            glEnd();
+        }
+        else
+        {
+            //draw floor
+            glColor3f(0, 0, 0);
+            glBegin(GL_QUADS);
+            {
+                glVertex2f(-1,0);
+                glVertex2f(1,0);
+                glVertex2f(1,-1);
+                glVertex2f(-1,-1);
+            }
+            glEnd();
+        }
+
+
         for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
         {
             double radius = baseradius*sqrt(it->mass);
             radius *= (1.0 + pulsefactor*sin(pulsespeed*time_));
 
             glColor3f(0,0,0);
-
             glBegin(GL_TRIANGLE_FAN);
             {
                 glVertex2f(it->pos[0], it->pos[1]);
@@ -66,6 +94,7 @@ void Simulation::render()
                 glVertex2f(it->p1.pos[0], it->p1.pos[1]);
                 glVertex2f(it->p2.pos[0], it->p2.pos[1]);
             }
+            glEnd();
         }
     }
     renderLock_.unlock();
@@ -74,6 +103,16 @@ void Simulation::render()
 void Simulation::takeSimulationStep()
 {
     time_ += params_.timeStep;
+    if(params_.F_GRAVITY){
+        for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
+        {
+            if(!(it->fixed))
+            {
+                it->pos[1]= it->vel[1]*params_.timeStep + (0.5)*params_.gravityG*(params_.timeStep*params_.timeStep);
+                it->vel[1] = it->vel[1]+ params_.timeStep*params_.gravityG;
+            }
+        }
+    }
 }
 
 void Simulation::addParticle(double x, double y)
@@ -82,34 +121,24 @@ void Simulation::addParticle(double x, double y)
     {
         Vector2d newpos(x,y);
         double mass = params_.particleMass;
-        particles_.push_back(Particle(newpos, mass, params_.particleFixed));
-
-        //if distance between new particle and an existing particle is within maxSpringDistance,
-        //connect those particles with a spring
-        double maxSpringDistSqd = params_.maxSpringDist*params_.maxSpringDist;
-        for(int i = 0; i<particles_.size()-1; i++)
+        if(!params_.F_FLOOR || y>=0)
         {
-            double x1x2 = (particles_[i].pos[0] - x);
-            double y1y2 = (particles_[i].pos[1] - y);
-            if(maxSpringDistSqd >= ((x1x2*x1x2)+(y1y2*y1y2)))
-            {
-                springs_.push_back(SpringComponent(particles_[i], particles_[particles_.size()-1]));
-            }
+            particles_.push_back(Particle(newpos, mass, params_.particleFixed));
 
+            //if distance between new particle and an existing particle is within maxSpringDistance,
+            //connect those particles with a spring
+            double maxSpringDistSqd = params_.maxSpringDist*params_.maxSpringDist;
+            for(int i = 0; i<particles_.size()-1; i++)
+            {
+                double x1x2 = (particles_[i].pos[0] - x);
+                double y1y2 = (particles_[i].pos[1] - y);
+                if(maxSpringDistSqd >= ((x1x2*x1x2)+(y1y2*y1y2)))
+                {
+                    springs_.push_back(SpringComponent(particles_[i], particles_[particles_.size()-1]));
+                }
+            }
         }
 
-
-    }
-    renderLock_.unlock();
-}
-
-void Simulation::clearScene()
-{
-    renderLock_.lock();
-    {
-        particles_.clear();
-        saws_.clear();
-        springs_.clear();
     }
     renderLock_.unlock();
 }
@@ -124,3 +153,16 @@ void Simulation::addSaw(double x, double y)
     }
     renderLock_.unlock();
 }
+
+
+void Simulation::clearScene()
+{
+    renderLock_.lock();
+    {
+        particles_.clear();
+        saws_.clear();
+        springs_.clear();
+    }
+    renderLock_.unlock();
+}
+
