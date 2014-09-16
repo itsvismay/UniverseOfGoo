@@ -66,15 +66,22 @@ public:
     void clearScene();
 
     void updateConfigVectorq();
+    void updateConfigVectorqPrev();
     void updateConfigVectorVel();
+    void updateMassMatrix();
+    void updateMassInvForceVector();
     void updateParticlePosFromQ();
     void updateParticleVelFromV();
 
+    void generateAllForces();
     void generateGrForce();
     void generateSpringForce();
+    void generateViscousDampingForce();
     void combineForces();
 
-    void explicitEuler();
+    void snapSprings();
+
+    void removeOutsideParticles();
 
 
 private:
@@ -88,10 +95,16 @@ private:
     std::vector<Particle> particles_;
     std::vector<Saw> saws_;
     Eigen::VectorXd qVector_;
+    Eigen::VectorXd qPrevVector_;
     Eigen::VectorXd velocityVector_;
+    Eigen::SparseMatrix<double> massMatrix_;
+    Eigen::SparseMatrix<double> massMatrixInverse_;
     Eigen::VectorXd forceVector_;
     Eigen::VectorXd gravityForceVector_;
     Eigen::VectorXd springForceVector_;
+    Eigen::VectorXd floorForceVector_;
+    Eigen::VectorXd visDampingForceVector_;
+    Eigen::VectorXd massInvForceVector_;
 };
 
 #endif // SIMULATION_H
