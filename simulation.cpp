@@ -174,6 +174,7 @@ void Simulation::takeSimulationStep()
     updateParticlePosFromQ(qVector_);
     updateParticleVelFromV(velocityVector_);
     snapSprings();
+    checkSawCollisions();
 }
 
 void Simulation::addParticle(double x, double y)
@@ -565,9 +566,47 @@ void Simulation::snapSprings()
     }
 }
 
+void Simulation::checkSawCollisions()
+{
+    // TODO : Implement check saw collision
+//    for ()
+}
+
 double Simulation::euclideanDistanceFormula(double x1, double y1, double x2, double y2)
 {
     return (x1-x2)*(x1-x2)+(y1-y2)*(y1-y2);
+}
+
+double Simulation::distanceFromInfiniteLine(Vector2d q1, Vector2d q2, Vector2d p)
+{
+    return abs((q2[0]-q1[0])*(q1[1]-p[1]) - (q1[0]-p[0])*(q2[1]-q1[1]))/sqrt(euclideanDistanceFormula(q1[0], q1[1], q2[0], q2[1]));
+}
+
+double Simulation::distanceFromFiniteLine(Vector2d q1, Vector2d q2, Vector2d p)
+{
+    double distance;
+    double distSquared = euclideanDistanceFormula(q1[0], q1[1], q2[0], q2[1]);
+    if (distSquared == 0)
+    {
+        distance = sqrt(euclideanDistanceFormula(q1[0], q1[1], q2[0], q2[1]));
+        return distance;
+    }
+    double projectionT = ((p[0] - q1[0]) * (q2[0] - q1[0]) + (p[1] - q1[1]) * (q2[1] - q1[1])) / distSquared;
+    if (projectionT < 0)
+    {
+        distance = sqrt(euclideanDistanceFormula(p[0], p[1], q1[0], q1[1]));
+    }
+    else if (projectionT > 1)
+    {
+        distance = sqrt(euclideanDistanceFormula(p[0], p[1], q2[0], q2[1]));
+    }
+    else
+    {
+        double x = q1[0] + projectionT * (q2[0] - q1[0]);
+        double y = q1[1] + projectionT * (q2[1] - q1[1]);
+        distance = sqrt(euclideanDistanceFormula(p[0], p[1], x, y));
+    }
+    return distance;
 }
 
 void Simulation::addSaw(double x, double y)
@@ -580,7 +619,6 @@ void Simulation::addSaw(double x, double y)
     }
     renderLock_.unlock();
 }
-
 
 // TODO : Remove particles outside the world.
 void Simulation::removeOutsideParticles()
@@ -608,4 +646,3 @@ void Simulation::clearScene()
     }
     renderLock_.unlock();
 }
-

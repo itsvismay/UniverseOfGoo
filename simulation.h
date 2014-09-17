@@ -72,10 +72,14 @@ public:
     void updateParticleVelFromV(Eigen::VectorXd vConfig);
 
     double euclideanDistanceFormula(double x1, double y1, double x2, double y2);
+    double distanceFromInfiniteLine(Eigen::Vector2d q1, Eigen::Vector2d q2, Eigen::Vector2d p);
+    double distanceFromFiniteLine(Eigen::Vector2d q1, Eigen::Vector2d q2, Eigen::Vector2d p);
 
     Eigen::SparseMatrix<double> getMassInverseMatrix();
+
     Eigen::SparseMatrix<double> generateAllGradients(Eigen::VectorXd xTildaVector, Eigen::VectorXd qPrev_);
     Eigen::VectorXd generateAllForces(Eigen::VectorXd qConfig, Eigen::VectorXd qPrevConfig);
+
     Eigen::VectorXd generateGrForce(Eigen::VectorXd qConfig);
     Eigen::SparseMatrix<double> generateGravityForceGradient(Eigen::VectorXd qConfig);
     Eigen::VectorXd generateSpringForce(Eigen::VectorXd qConfig);
@@ -84,6 +88,7 @@ public:
     Eigen::SparseMatrix<double> generateViscousDampingGradient(Eigen::VectorXd qConfig, Eigen::VectorXd qPrevConfig);
 
     void snapSprings();
+    void checkSawCollisions();
 
     void removeOutsideParticles();
 
