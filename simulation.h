@@ -91,6 +91,8 @@ public:
     void checkSawCollisions();
 
     void removeOutsideParticles();
+    void destroyParticleReferences(int id);
+    void updateParticleID();
 
 
 private:

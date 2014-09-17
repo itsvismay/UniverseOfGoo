@@ -94,8 +94,11 @@ void Simulation::render()
 void Simulation::takeSimulationStep()
 {
     time_ += params_.timeStep;
+
+    removeOutsideParticles();
     updateConfigVectorq();
     updateConfigVectorVel();
+
     if (params_.integrator == params_.TI_EXPLICIT_EULER)
     {
         int particleId = 0;
@@ -151,7 +154,7 @@ void Simulation::takeSimulationStep()
 //            totalForceVector = generateAllForces(xTildaVector, qPrevVector_);
             Eigen::SparseMatrix<double> I(particles_.size()*2, particles_.size()*2);
             I.setIdentity();
-            deltaF = params_.timeStep*params_.timeStep*getMassInverseMatrix()*(generateAllGradients(xTildaVector, qPrevVector_))+I;
+            deltaF = I - params_.timeStep*params_.timeStep*getMassInverseMatrix()*(generateAllGradients(xTildaVector, qPrevVector_));
             deltaF = deltaF*(-1);
             BiCGSTAB< SparseMatrix<double> > solver;
             solver.compute(deltaF);
@@ -298,7 +301,7 @@ void Simulation::updateParticleVelFromV(Eigen::VectorXd vConfig)
 
 Eigen::VectorXd Simulation::generateAllForces(Eigen::VectorXd qConfig, Eigen::VectorXd qPrevConfig)
 {
-    return generateGrForce(qConfig) + generateSpringForce(qConfig) + generateViscousDampingForce(qConfig, qPrevConfig);
+    return generateGrForce(qConfig) + generateSpringForce(qConfig);//generateViscousDampingForce(qConfig, qPrevConfig);
 }
 
 Eigen::SparseMatrix<double> Simulation::generateAllGradients(Eigen::VectorXd xTildaVector, Eigen::VectorXd qPrev_)
@@ -308,6 +311,7 @@ Eigen::SparseMatrix<double> Simulation::generateAllGradients(Eigen::VectorXd xTi
 
 Eigen::VectorXd Simulation::generateGrForce(Eigen::VectorXd qConfig)
 {
+
     Eigen::VectorXd gravityForceVector(qConfig.rows());
     gravityForceVector.setZero();
     int particleId = 0;
@@ -341,6 +345,7 @@ Eigen::SparseMatrix<double> Simulation::generateGravityForceGradient(Eigen::Vect
 
 Eigen::VectorXd Simulation::generateSpringForce(Eigen::VectorXd qConfig)
 {
+
     double Kij;
     double L;
     double p1p2euclideanDistance;
@@ -467,6 +472,7 @@ Eigen::SparseMatrix<double> Simulation::generateSpringForceGradient(Eigen::Vecto
 
 Eigen::VectorXd Simulation::generateViscousDampingForce(Eigen::VectorXd qConfig, Eigen::VectorXd qPrevConfig)
 {
+    cout <<"\n in";
     double p1Xiold;
     double p1Xi;
     double p2Xiold;
@@ -502,6 +508,8 @@ Eigen::VectorXd Simulation::generateViscousDampingForce(Eigen::VectorXd qConfig,
         visDampingForceVector[pj*2] += -visDampingForceVector[pi*2];
         visDampingForceVector[(pj*2)+1] += -visDampingForceVector[(pi*2)+1];
     }
+    cout <<"\n out";
+    return visDampingForceVector;
 }
 
 Eigen::SparseMatrix<double> Simulation::generateViscousDampingGradient(VectorXd qConfig, Eigen::VectorXd qPrevConfig)
@@ -568,30 +576,30 @@ void Simulation::snapSprings()
 
 void Simulation::checkSawCollisions()
 {
-    // TODO : Implement check saw collision
-    for (vector<Saw>::iterator itSaw = saws_.begin(); it != saws_.end(); ++it)
-    {
-        // Check for Saw - Particle Collision. Remove Particle and all connected Springs.
-        for (vector<Particle>::iterator itParticle = particles_.begin(); it != particles_.end(); ++it)
-        {
+//    // TODO : Implement check saw collision
+//    for (vector<Saw>::iterator itSaw = saws_.begin(); it != saws_.end(); ++it)
+//    {
+//        // Check for Saw - Particle Collision. Remove Particle and all connected Springs.
+//        for (vector<Particle>::iterator itParticle = particles_.begin(); it != particles_.end(); ++it)
+//        {
 
-            if (euclideanDistanceFormula(itSaw->pos[0], itSaw->pos[1], itParticle->pos[0], itParticle->pos[1]) < (itSaw->radius*itSaw->radius))
-            {
-                // Destroy Particle and check for springs attached and destroy those.
-            }
+//            if (euclideanDistanceFormula(itSaw->pos[0], itSaw->pos[1], itParticle->pos[0], itParticle->pos[1]) < (itSaw->radius*itSaw->radius))
+//            {
+//                // Destroy Particle and check for springs attached and destroy those.
+//            }
 
-        }
-        // Check for Saw - Spring collision. Only remove Spring and no particles.
-        for (vector<Particle>::iterator itSpring = springs_.begin(); it != springs_.end(); ++it)
-        {
-            Eigen::Vector2d q1 = particles_[itSpring->p1Id].pos;
-            Eigen::Vector2d q2 = particles_[itSpring->p2Id].pos;
-            if (distanceFromFiniteLine(q1, q2, itSaw->pos) < itSaw->radius)
-            {
-                // Destroy Spring
-            }
-        }
-    }
+//        }
+//        // Check for Saw - Spring collision. Only remove Spring and no particles.
+//        for (vector<Particle>::iterator itSpring = springs_.begin(); it != springs_.end(); ++it)
+//        {
+//            Eigen::Vector2d q1 = particles_[itSpring->p1Id].pos;
+//            Eigen::Vector2d q2 = particles_[itSpring->p2Id].pos;
+//            if (distanceFromFiniteLine(q1, q2, itSaw->pos) < itSaw->radius)
+//            {
+//                // Destroy Spring
+//            }
+//        }
+//    }
 }
 
 double Simulation::euclideanDistanceFormula(double x1, double y1, double x2, double y2)
@@ -649,13 +657,56 @@ void Simulation::removeOutsideParticles()
     {
         if (abs(it->pos[0])>1 || abs(it->pos[1])>1)
         {
+            cout <<"\n ID Generator Old: " <<idGenerator<< " Size Old:"<<particles_.size();
+            int IDtoDestroy = it->id;
             it = particles_.erase(it);
+            this->destroyParticleReferences(IDtoDestroy);
+            this->updateParticleID();
+            cout <<"\n New Size: "<<springs_.size();
         }
         else
         {
             ++it;
         }
     }
+}
+
+void Simulation::destroyParticleReferences(int id)
+{
+    //remove springs_ with particle
+    for(vector<SpringComponent>::iterator it = springs_.begin(); it !=springs_.end();)
+    {
+        if(id==it->p1Id || id==it->p2Id)
+        {
+            it = springs_.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    int i = id*2;
+    int n = qPrevVector_.size()-(i)-1;
+    qPrevVector_.segment(i,n) = qPrevVector_.tail(n);
+    qPrevVector_.conservativeResize(qPrevVector_.size()-1);
+    n = qPrevVector_.size()-(i+1)-1;
+    qPrevVector_.segment(i,n) = qPrevVector_.tail(n);
+    qPrevVector_.conservativeResize(qPrevVector_.size()-1);
+
+    return;
+}
+
+void Simulation::updateParticleID()
+{
+    int i;
+    for(i=0; i<particles_.size(); i++)
+    {
+        particles_[i].id =i;
+    }
+    idGenerator = i;
+    cout <<"\n ID Generator New: " <<idGenerator<< " Size New:"<<particles_.size();
+    return;
 }
 
 void Simulation::clearScene()
