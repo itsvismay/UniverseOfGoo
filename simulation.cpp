@@ -569,7 +569,29 @@ void Simulation::snapSprings()
 void Simulation::checkSawCollisions()
 {
     // TODO : Implement check saw collision
-//    for ()
+    for (vector<Saw>::iterator itSaw = saws_.begin(); it != saws_.end(); ++it)
+    {
+        // Check for Saw - Particle Collision. Remove Particle and all connected Springs.
+        for (vector<Particle>::iterator itParticle = particles_.begin(); it != particles_.end(); ++it)
+        {
+
+            if (euclideanDistanceFormula(itSaw->pos[0], itSaw->pos[1], itParticle->pos[0], itParticle->pos[1]) < (itSaw->radius*itSaw->radius))
+            {
+                // Destroy Particle and check for springs attached and destroy those.
+            }
+
+        }
+        // Check for Saw - Spring collision. Only remove Spring and no particles.
+        for (vector<Particle>::iterator itSpring = springs_.begin(); it != springs_.end(); ++it)
+        {
+            Eigen::Vector2d q1 = particles_[itSpring->p1Id].pos;
+            Eigen::Vector2d q2 = particles_[itSpring->p2Id].pos;
+            if (distanceFromFiniteLine(q1, q2, itSaw->pos) < itSaw->radius)
+            {
+                // Destroy Spring
+            }
+        }
+    }
 }
 
 double Simulation::euclideanDistanceFormula(double x1, double y1, double x2, double y2)
