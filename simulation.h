@@ -73,10 +73,15 @@ public:
     void updateParticlePosFromQ();
     void updateParticleVelFromV();
 
-    void generateAllForces();
-    void generateGrForce();
-    void generateSpringForce();
-    void generateViscousDampingForce();
+    double euclideanDistanceFormula(double x1, double y1, double x2, double y2);
+    Eigen::SparseMatrix<double> generateAllGradients(Eigen::VectorXd xTildaVector, Eigen::VectorXd qPrev_);
+    void generateAllForces(Eigen::VectorXd qConfig, Eigen::VectorXd qPrevConfig);
+    void generateGrForce(Eigen::VectorXd qConfig);
+    Eigen::SparseMatrix<double> generateGravityForceGradient(Eigen::VectorXd qConfig);
+    void generateSpringForce(Eigen::VectorXd qConfig);
+    Eigen::SparseMatrix<double> generateSpringForceGradient(Eigen::VectorXd qConfig);
+    void generateViscousDampingForce(Eigen::VectorXd qConfig, Eigen::VectorXd qPrevConfig);
+    Eigen::SparseMatrix<double> generateViscousDampingGradient(Eigen::VectorXd qConfig, Eigen::VectorXd qPrevConfig);
     void combineForces();
 
     void snapSprings();
@@ -98,8 +103,8 @@ private:
     Eigen::VectorXd qPrevVector_;
     Eigen::VectorXd velocityVector_;
     Eigen::SparseMatrix<double> massMatrix_;
-    Eigen::SparseMatrix<double> massMatrixInverse_;
-    Eigen::VectorXd forceVector_;
+    Eigen::SparseMatrix<double> massInverseMatrix_;
+    Eigen::VectorXd totalForceVector_;
     Eigen::VectorXd gravityForceVector_;
     Eigen::VectorXd springForceVector_;
     Eigen::VectorXd floorForceVector_;

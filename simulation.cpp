@@ -99,7 +99,7 @@ void Simulation::takeSimulationStep()
     if (params_.integrator == params_.TI_EXPLICIT_EULER)
     {
         int particleId = 0;
-        generateAllForces();
+        generateAllForces(qVector_, qPrevVector_);
         updateMassInvForceVector();
         updateConfigVectorqPrev();
         for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
@@ -115,14 +115,14 @@ void Simulation::takeSimulationStep()
     {
         // Update the q(i+1).
         int particleId = 0;
-        updateConfigVectorqPrev();
         for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
         {
             particleId = it->id;
             qVector_[particleId*2] = qVector_[particleId*2] + params_.timeStep*velocityVector_[particleId*2];
             qVector_[(particleId*2)+1] = qVector_[(particleId*2)+1] + params_.timeStep*velocityVector_[(particleId*2)+1];
         }
-        generateAllForces();
+        updateConfigVectorqPrev();
+        generateAllForces(qVector_, qPrevVector_);
         updateMassInvForceVector();
         particleId = 0;
         // Use the q(i+1) to generate Force and update velocitites
@@ -135,10 +135,45 @@ void Simulation::takeSimulationStep()
         updateParticlePosFromQ();
         updateParticleVelFromV();
     }
+    else if (params_.integrator == params_.TI_IMPLICIT_EULER)
+    {
+        int i;
+        Eigen::VectorXd deltaX;
+        Eigen::VectorXd xTildaVector = qVector_;
+        Eigen::VectorXd Fval;
+        Eigen::SparseMatrix<double> deltaF(particles_.size()*2, particles_.size()*2);
+        cout << "\n Q vector in:"<< qVector_;
+        cout << "\n XTilda in :"<<xTildaVector;
+        updateConfigVectorqPrev();
+        generateAllForces(xTildaVector, qPrevVector_);
+        Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - (params_.timeStep*params_.timeStep)*massInverseMatrix_*totalForceVector_;
+        for (i=0; i<params_.NewtonMaxIters; i++)
+        {
+            generateAllForces(xTildaVector, qPrevVector_);
+            Eigen::SparseMatrix<double> I(particles_.size()*2, particles_.size()*2);
+            I.setIdentity();
+            deltaF = params_.timeStep*params_.timeStep*massInverseMatrix_*(generateAllGradients(xTildaVector, qPrevVector_))+I;
+            deltaF = deltaF*(-1);
+            BiCGSTAB< SparseMatrix<double> > solver;
+            solver.compute(deltaF);
+            deltaX = solver.solve(Fval);
+            cout << "\nDeltaX:"<< deltaX;
+            xTildaVector = xTildaVector + deltaX;
+            generateAllForces(xTildaVector, qPrevVector_);
+            Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - (params_.timeStep*params_.timeStep)*massInverseMatrix_*totalForceVector_;
+            if (Fval.squaredNorm() < params_.NewtonTolerance)
+            {
+                break;
+            }
+        }
+        cout << "\n Q vector out :"<< qVector_;
+        cout << "\n XTilda out :"<<xTildaVector;
+        velocityVector_ = (xTildaVector - qVector_)/params_.timeStep;
+        qVector_ = xTildaVector;
+    }
     updateParticlePosFromQ();
     updateParticleVelFromV();
     snapSprings();
-    // TODO : Floor Force needs to be re-done
 }
 
 void Simulation::addParticle(double x, double y)
@@ -157,8 +192,6 @@ void Simulation::addParticle(double x, double y)
             qVector_[qVector_.rows()-1] = newpos[1];
             qPrevVector_[qPrevVector_.rows()-2] = newpos[0];
             qPrevVector_[qPrevVector_.rows()-1] = newpos[1];
-//            updateConfigVectorq();
-//            updateConfigVectorqPrev();
             updateConfigVectorVel();
             updateMassMatrix();
             /*if distance between new particle and an existing particle is within maxSpringDistance,
@@ -183,8 +216,8 @@ void Simulation::updateMassMatrix()
 {
     massMatrix_.resize(particles_.size()*2, particles_.size()*2);
     massMatrix_.setZero();
-    massMatrixInverse_.resize(particles_.size()*2, particles_.size()*2);
-    massMatrixInverse_.setZero();
+    massInverseMatrix_.resize(particles_.size()*2, particles_.size()*2);
+    massInverseMatrix_.setZero();
     int particleId = 0;
     double mass;
     for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
@@ -200,8 +233,8 @@ void Simulation::updateMassMatrix()
         }
         massMatrix_.coeffRef(particleId*2,particleId*2) = mass;
         massMatrix_.coeffRef((particleId*2)+1,(particleId*2)+1) = mass;
-        massMatrixInverse_.coeffRef(particleId*2,particleId*2) = 1/mass;
-        massMatrixInverse_.coeffRef((particleId*2)+1,(particleId*2)+1) = 1/mass;
+        massInverseMatrix_.coeffRef(particleId*2,particleId*2) = 1/mass;
+        massInverseMatrix_.coeffRef((particleId*2)+1,(particleId*2)+1) = 1/mass;
     }
 //    cout<<"Mass Inverse Matrix: "<<massMatrixInverse_;
 }
@@ -243,14 +276,6 @@ void Simulation::updateConfigVectorVel()
     }
 }
 
-void Simulation::updateMassInvForceVector()
-{
-    massInvForceVector_.resize(0);
-    massInvForceVector_.resize(particles_.size()*2);
-    massInvForceVector_ = massMatrixInverse_*forceVector_;
-//    cout<<"\nMass Inv Force Vector: "<<massInvForceVector_;
-}
-
 void Simulation::updateParticlePosFromQ()
 {
     int particleId;
@@ -273,44 +298,69 @@ void Simulation::updateParticleVelFromV()
     }
 }
 
-void Simulation::generateAllForces()
+void Simulation::updateMassInvForceVector()
 {
-    generateGrForce();
-    generateSpringForce();
-    generateViscousDampingForce();
+    massInvForceVector_.resize(0);
+    massInvForceVector_.resize(particles_.size()*2);
+    massInvForceVector_ = massInverseMatrix_*totalForceVector_;
+//    cout<<"\nMass Inv Force Vector: "<<massInvForceVector_;
+}
+
+void Simulation::generateAllForces(Eigen::VectorXd qConfig, Eigen::VectorXd qPrevConfig)
+{
+    generateGrForce(qConfig);
+    generateSpringForce(qConfig);
+    generateViscousDampingForce(qConfig, qPrevConfig);
     combineForces();
 }
 
-void Simulation::generateGrForce()
+Eigen::SparseMatrix<double> Simulation::generateAllGradients(Eigen::VectorXd xTildaVector, Eigen::VectorXd qPrev_)
 {
-    gravityForceVector_.resize(qVector_.rows());
+    return generateGravityForceGradient(xTildaVector)+generateSpringForceGradient(xTildaVector)+generateViscousDampingGradient(xTildaVector, qPrev_);
+}
+
+void Simulation::generateGrForce(Eigen::VectorXd qConfig)
+{
+    gravityForceVector_.resize(qConfig.rows());
     int particleId = 0;
+    if ((params_.activeForces & 1)==0)
+    {
+        gravityForceVector_.setZero();
+        return;
+    }
     for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
     {
         particleId = it->id;
-        if ((params_.activeForces & 1)==0)
+//        if ((params_.activeForces & 1)==0)
+//        {
+//            gravityForceVector_[particleId*2] = 0.0;
+//            gravityForceVector_[(particleId*2) + 1] = 0.0;
+//        }
+//        else
+//        {
+        if (it->fixed)
         {
             gravityForceVector_[particleId*2] = 0.0;
-            gravityForceVector_[(particleId*2) + 1] = 0.0;
+            gravityForceVector_[(particleId*2)+1] = 0.0;
         }
         else
         {
-            if (it->fixed)
-            {
-                gravityForceVector_[particleId*2] = 0.0;
-                gravityForceVector_[(particleId*2)+1] = 0.0;
-            }
-            else
-            {
-                gravityForceVector_[particleId*2] = 0.0;
-                gravityForceVector_[(particleId*2)+1] = it->mass*params_.gravityG;
-            }
+            gravityForceVector_[particleId*2] = 0.0;
+            gravityForceVector_[(particleId*2)+1] = it->mass*params_.gravityG;
         }
+//        }
     }
 //    cout<<"\nGravity Force Vector: "<<gravityForceVector_;
 }
 
-void Simulation::generateSpringForce()
+Eigen::SparseMatrix<double> Simulation::generateGravityForceGradient(Eigen::VectorXd qConfig)
+{
+    Eigen::SparseMatrix<double> gravityForceGradient(particles_.size()*2, particles_.size()*2);
+    gravityForceGradient.setZero();
+    return gravityForceGradient;
+}
+
+void Simulation::generateSpringForce(Eigen::VectorXd qConfig)
 {
     double Kij;
     double L;
@@ -323,42 +373,134 @@ void Simulation::generateSpringForce()
     int pi;
     int pj;
     springForceVector_.resize(0);
-    springForceVector_.resize(qVector_.rows());
+    springForceVector_.resize(qConfig.rows());
+    if ((params_.activeForces & 2)==0)
+    {
+        springForceVector_.setZero();
+        return;
+    }
     for (vector<SpringComponent>::iterator it = springs_.begin(); it != springs_.end(); ++it)
     {
         pi = it->p1Id;
         pj = it->p2Id;
 //        cout<<"\nSpring P1 id X and Y : "<<it->p1.id<<","<<it->p1.pos[0]<<","<<it->p1.pos[1];
 //        cout<<"\nParticle P1 id X and Y: "<<particles_[0].id<<","<<particles_[0].pos[0]<<","<<particles_[0].pos[1];
-        if ((params_.activeForces & 2)==0)
-        {
-            springForceVector_[pi*2] = 0.0;
-            springForceVector_[(pi*2)+1] = 0.0;
-            springForceVector_[pj*2] = 0.0;
-            springForceVector_[(pj*2)+1] = 0.0;
-        }
-        else
-        {
-            L =  it->restLength;
-            Kij = params_.springStiffness/L;
-            Xi = qVector_[pi*2];
-            Yi = qVector_[(pi*2)+1];
-            Xj = qVector_[pj*2];
-            Yj = qVector_[(pj*2)+1];
-            p1p2euclideanDistance = sqrt((Xi-Xj)*(Xi-Xj) + (Yi-Yj)*(Yi-Yj));
-            tempForce = (Kij*(p1p2euclideanDistance-L))/p1p2euclideanDistance;
-            springForceVector_[pi*2] = tempForce*(Xj-Xi);
-            springForceVector_[(pi*2)+1] = tempForce*(Yj-Yi);
-            springForceVector_[pj*2] = tempForce*(Xi-Xj);
-            springForceVector_[(pj*2)+1] = tempForce*(Yi-Yj);
-        }
+//        if ((params_.activeForces & 2)==0)
+//        {
+//            springForceVector_[pi*2] = 0.0;
+//            springForceVector_[(pi*2)+1] = 0.0;
+//            springForceVector_[pj*2] = 0.0;
+//            springForceVector_[(pj*2)+1] = 0.0;
+//        }
+//        else
+//        {
+        L =  it->restLength;
+        Kij = params_.springStiffness/L;
+        Xi = qConfig[pi*2];
+        Yi = qConfig[(pi*2)+1];
+        Xj = qConfig[pj*2];
+        Yj = qConfig[(pj*2)+1];
+        p1p2euclideanDistance = sqrt((Xi-Xj)*(Xi-Xj) + (Yi-Yj)*(Yi-Yj));
+        tempForce = (Kij*(p1p2euclideanDistance-L))/p1p2euclideanDistance;
+        springForceVector_[pi*2] = tempForce*(Xj-Xi);
+        springForceVector_[(pi*2)+1] = tempForce*(Yj-Yi);
+        springForceVector_[pj*2] = tempForce*(Xi-Xj);
+        springForceVector_[(pj*2)+1] = tempForce*(Yi-Yj);
+//        }
     }
 //    cout<<"\nGenerated Spring Force Vector: "<<springForceVector_;
 }
 
-void Simulation::generateViscousDampingForce()
+Eigen::SparseMatrix<double> Simulation::generateSpringForceGradient(Eigen::VectorXd qConfig)
 {
+    Eigen::SparseMatrix<double> springForceGradient(particles_.size()*2, particles_.size()*2);
+    springForceGradient.setZero();
+    vector< Triplet<double> > tripletList;
+    tripletList.reserve(particles_.size()*2);
+    double Kij;
+    double L;
     double p1p2euclideanDistance;
+    double Xi;
+    double Xj;
+    double Yi;
+    double Yj;
+    double dfxidxi;
+    double dfxidxj;
+    double dfxidyi;
+    double dfxidyj;
+    double dfxjdxi;
+    double dfxjdxj;
+    double dfxjdyi;
+    double dfxjdyj;
+    double dfyidxi;
+    double dfyidxj;
+    double dfyidyi;
+    double dfyidyj;
+    double dfyjdxi;
+    double dfyjdxj;
+    double dfyjdyi;
+    double dfyjdyj;
+    int Pi;
+    int Pj;
+    for (vector<SpringComponent>::iterator it = springs_.begin(); it != springs_.end(); ++it)
+    {
+        Pi = it->p1Id;
+        Pj = it->p2Id;
+        Xi = qConfig[Pi*2];
+        Yi = qConfig[(Pi*2)+1];
+        Xj = qConfig[Pj*2];
+        Yj = qConfig[(Pj*2)+1];
+
+        L = it->restLength;
+        Kij = params_.springStiffness/L;
+        p1p2euclideanDistance = euclideanDistanceFormula(Xi, Yi, Xj, Yj);
+
+        dfxidxi = -Kij*(1-(L/sqrt(p1p2euclideanDistance))) - Kij*L*(pow(p1p2euclideanDistance, -1.5))*(Xj-Xi)*(Xj-Xi);
+        dfxidyi = -Kij*L*(pow(p1p2euclideanDistance, -1.5))*(Xj-Xi)*(Yj-Yi);
+        dfxidxj = -dfxidxi;
+        dfxidyj = -dfxidyi;
+
+        dfyidxi = dfxidyi;
+        dfyidyi = -Kij*(1-(L/sqrt(p1p2euclideanDistance))) - Kij*L*(pow(p1p2euclideanDistance, -1.5))*(Yj-Yi)*(Yj-Yi);
+        dfyidxj = -dfyidxi;
+        dfyidyj = -dfyidyi;
+
+        dfxjdxi = dfxidxj;
+        dfxjdyi = dfyidxj;
+        dfxjdxj = -dfxjdxi;
+        dfxjdyj = -dfxjdyi;
+
+        dfyjdxi = dfxidyj;
+        dfyjdyi = dfyidyj;
+        dfyjdxj = -dfyjdxi;
+        dfyjdyj = -dfyjdyi;
+
+        tripletList.push_back(Triplet<double>(2*Pi, 2*Pi, dfxidxi));
+        tripletList.push_back(Triplet<double>(2*Pi, (2*Pi)+1, dfxidyi));
+        tripletList.push_back(Triplet<double>(2*Pi+1, 2*Pi, dfyidxi));
+        tripletList.push_back(Triplet<double>((2*Pi)+1, (2*Pi)+1, dfyidyi));
+
+        tripletList.push_back(Triplet<double>(2*Pj, 2*Pj, dfxjdxj));
+        tripletList.push_back(Triplet<double>(2*Pj, (2*Pj)+1, dfxjdyj));
+        tripletList.push_back(Triplet<double>(2*Pj+1, 2*Pj, dfyjdxj));
+        tripletList.push_back(Triplet<double>((2*Pj)+1, (2*Pj)+1, dfyjdyj));
+
+        tripletList.push_back(Triplet<double>(2*Pi, 2*Pj, dfxidxj));
+        tripletList.push_back(Triplet<double>(2*Pi, (2*Pj)+1, dfxidyj));
+        tripletList.push_back(Triplet<double>((2*Pi)+1, 2*Pj, dfyidxj));
+        tripletList.push_back(Triplet<double>((2*Pi)+1, (2*Pj)+1, dfyidyj));
+
+        tripletList.push_back(Triplet<double>(2*Pj, 2*Pi, dfxjdxi));
+        tripletList.push_back(Triplet<double>(2*Pj, (2*Pi)+1, dfxjdyi));
+        tripletList.push_back(Triplet<double>((2*Pj)+1, 2*Pi, dfyjdxi));
+        tripletList.push_back(Triplet<double>((2*Pj)+1, (2*Pi)+1, dfyjdyi));
+    }
+    springForceGradient.setFromTriplets(tripletList.begin(), tripletList.end());
+    return springForceGradient;
+}
+
+void Simulation::generateViscousDampingForce(Eigen::VectorXd qConfig, Eigen::VectorXd qPrevConfig)
+{
     double p1Xiold;
     double p1Xi;
     double p2Xiold;
@@ -367,50 +509,59 @@ void Simulation::generateViscousDampingForce()
     double p1Yi;
     double p2Yiold;
     double p2Yi;
-    double tempForce;
     int pi;
     int pj;
     visDampingForceVector_.resize(0);
-    visDampingForceVector_.resize(qVector_.rows());
+    visDampingForceVector_.resize(qConfig.rows());
+    if ((params_.activeForces & 2)==0)
+    {
+        visDampingForceVector_.setZero();
+        return;
+    }
     for (vector<SpringComponent>::iterator it = springs_.begin(); it != springs_.end(); ++it)
     {
         pi = it->p1Id;
         pj = it->p2Id;
-        if ((params_.activeForces & 2)==0)
-        {
-            visDampingForceVector_[pi*2] = 0.0;
-            visDampingForceVector_[(pi*2)+1] = 0.0;
-            visDampingForceVector_[pj*2] = 0.0;
-            visDampingForceVector_[(pj*2)+1] = 0.0;
-        }
-        else
-        {
-            p1Xi = qVector_[pi*2];
-            p1Yi = qVector_[(pi*2)+1];
-            p2Xi = qVector_[pj*2];
-            p2Yi = qVector_[(pj*2)+1];
+        p1Xi = qConfig[pi*2];
+        p1Yi = qConfig[(pi*2)+1];
+        p2Xi = qConfig[pj*2];
+        p2Yi = qConfig[(pj*2)+1];
 
-            p1Xiold = qPrevVector_[pi*2];
-            p1Yiold = qPrevVector_[(pi*2)+1];
-            p2Xiold = qPrevVector_[pj*2];
-            p2Yiold = qPrevVector_[(pj*2)+1];
+        p1Xiold = qPrevConfig[pi*2];
+        p1Yiold = qPrevConfig[(pi*2)+1];
+        p2Xiold = qPrevConfig[pj*2];
+        p2Yiold = qPrevConfig[(pj*2)+1];
 
-            visDampingForceVector_[pi*2] = (((p2Xi - p2Xiold) - (p1Xi - p1Xiold))*params_.dampingStiffness)/params_.timeStep;
-            visDampingForceVector_[(pi*2)+1] = (((p2Yi - p2Yiold) - (p1Yi - p1Yiold))*params_.dampingStiffness)/params_.timeStep;
-            visDampingForceVector_[pj*2] = -visDampingForceVector_[pi*2];
-            visDampingForceVector_[(pj*2)+1] = -visDampingForceVector_[(pi*2)+1];
-        }
+        visDampingForceVector_[pi*2] = (((p2Xi - p2Xiold) - (p1Xi - p1Xiold))*params_.dampingStiffness)/params_.timeStep;
+        visDampingForceVector_[(pi*2)+1] = (((p2Yi - p2Yiold) - (p1Yi - p1Yiold))*params_.dampingStiffness)/params_.timeStep;
+        visDampingForceVector_[pj*2] = -visDampingForceVector_[pi*2];
+        visDampingForceVector_[(pj*2)+1] = -visDampingForceVector_[(pi*2)+1];
+//        }
     }
+}
+
+Eigen::SparseMatrix<double> Simulation::generateViscousDampingGradient(VectorXd qConfig, Eigen::VectorXd qPrevConfig)
+{
+    Eigen::SparseMatrix<double> visDampingForceGradient(particles_.size()*2, particles_.size()*2);
+    visDampingForceGradient.setZero();
+    double force = -params_.dampingStiffness/params_.timeStep;
+    Eigen::VectorXd dforce(particles_.size()*2);
+    dforce.setConstant(force);
+    Eigen::SparseMatrix<double> I(particles_.size()*2, particles_.size()*2);
+    I.setIdentity();
+    visDampingForceGradient = I*dforce;
+    return visDampingForceGradient;
+
 }
 
 void Simulation::combineForces()
 {
     int i=0;
-    forceVector_.resize(qVector_.rows());
+    totalForceVector_.resize(qVector_.rows());
     for (i=0; i<qVector_.rows(); i++)
     {
-        forceVector_[i] = 0;
-        forceVector_[i] = gravityForceVector_[i] + springForceVector_[i] + visDampingForceVector_[i];
+        totalForceVector_[i] = 0;
+        totalForceVector_[i] = gravityForceVector_[i] + springForceVector_[i] + visDampingForceVector_[i];
         springForceVector_[i]=0;
         gravityForceVector_[i]=0;
     }
@@ -440,6 +591,11 @@ void Simulation::snapSprings()
     }
 }
 
+double Simulation::euclideanDistanceFormula(double x1, double y1, double x2, double y2)
+{
+    return (x1-x2)*(x1-x2)+(y1-y2)*(y1-y2);
+}
+
 void Simulation::addSaw(double x, double y)
 {
     renderLock_.lock();
@@ -450,6 +606,7 @@ void Simulation::addSaw(double x, double y)
     }
     renderLock_.unlock();
 }
+
 
 // TODO : Remove particles outside the world.
 void Simulation::removeOutsideParticles()
