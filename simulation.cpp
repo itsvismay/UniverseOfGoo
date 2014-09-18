@@ -144,123 +144,121 @@ void Simulation::render()
 void Simulation::takeSimulationStep()
 {
     time_ += params_.timeStep;
+    renderLock_.lock();
+    {
+        updateConfigVectorq();
+        updateConfigVectorVel();
 
-    updateConfigVectorq();
-    updateConfigVectorVel();
-
-    if (params_.integrator == params_.TI_EXPLICIT_EULER)
-    {
-        int particleId = 0;
-        Eigen::VectorXd totalForceVector = generateAllForces(qVector_, qPrevVector_);
-        Eigen::VectorXd massInvForceVector = getMassInverseMatrix()*totalForceVector;
-        updateConfigVectorqPrev(qVector_);
-        for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
+        if (params_.integrator == params_.TI_EXPLICIT_EULER)
         {
-            particleId = it - particles_.begin();
-            qVector_[particleId*2] = qVector_[particleId*2] + params_.timeStep*velocityVector_[particleId*2];
-            qVector_[(particleId*2)+1] = qVector_[(particleId*2)+1] + params_.timeStep*velocityVector_[(particleId*2)+1];
-            velocityVector_[particleId*2] = velocityVector_[particleId*2] + params_.timeStep*massInvForceVector[particleId*2];
-            velocityVector_[(particleId*2)+1] = velocityVector_[(particleId*2)+1] + params_.timeStep*massInvForceVector[(particleId*2)+1];
+            int particleId = 0;
+            Eigen::VectorXd totalForceVector = generateAllForces(qVector_, qPrevVector_);
+            Eigen::VectorXd massInvForceVector = getMassInverseMatrix()*totalForceVector;
+            updateConfigVectorqPrev(qVector_);
+            for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
+            {
+                particleId = it - particles_.begin();
+                qVector_[particleId*2] = qVector_[particleId*2] + params_.timeStep*velocityVector_[particleId*2];
+                qVector_[(particleId*2)+1] = qVector_[(particleId*2)+1] + params_.timeStep*velocityVector_[(particleId*2)+1];
+                velocityVector_[particleId*2] = velocityVector_[particleId*2] + params_.timeStep*massInvForceVector[particleId*2];
+                velocityVector_[(particleId*2)+1] = velocityVector_[(particleId*2)+1] + params_.timeStep*massInvForceVector[(particleId*2)+1];
+            }
         }
-    }
-    else if (params_.integrator == params_.TI_VELOCITY_VERLET)
-    {
-        // Update the q(i+1).
-        int particleId = 0;
-        for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
+        else if (params_.integrator == params_.TI_VELOCITY_VERLET)
         {
-            particleId = it - particles_.begin();
-            qVector_[particleId*2] = qVector_[particleId*2] + params_.timeStep*velocityVector_[particleId*2];
-            qVector_[(particleId*2)+1] = qVector_[(particleId*2)+1] + params_.timeStep*velocityVector_[(particleId*2)+1];
+            // Update the q(i+1).
+            int particleId = 0;
+            updateConfigVectorqPrev(qVector_);
+            for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
+            {
+                particleId = it - particles_.begin();
+                qVector_[particleId*2] = qVector_[particleId*2] + params_.timeStep*velocityVector_[particleId*2];
+                qVector_[(particleId*2)+1] = qVector_[(particleId*2)+1] + params_.timeStep*velocityVector_[(particleId*2)+1];
+            }
+            Eigen::VectorXd totalForceVector = generateAllForces(qVector_, qPrevVector_);
+            Eigen::VectorXd massInvForceVector = getMassInverseMatrix()*totalForceVector;
+            particleId = 0;
+            // Use the q(i+1) to generate Force and update velocitites
+            for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
+            {
+                particleId = it - particles_.begin();
+                velocityVector_[particleId*2] = velocityVector_[particleId*2] + params_.timeStep*massInvForceVector[particleId*2];
+                velocityVector_[(particleId*2)+1] = velocityVector_[(particleId*2)+1] + params_.timeStep*massInvForceVector[(particleId*2)+1];
+            }
         }
-        updateConfigVectorqPrev(qVector_);
-        Eigen::VectorXd totalForceVector = generateAllForces(qVector_, qPrevVector_);
-        Eigen::VectorXd massInvForceVector = getMassInverseMatrix()*totalForceVector;
-        particleId = 0;
-        // Use the q(i+1) to generate Force and update velocitites
-        for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
+        else if (params_.integrator == params_.TI_IMPLICIT_EULER)
         {
-            particleId = it - particles_.begin();
-            velocityVector_[particleId*2] = velocityVector_[particleId*2] + params_.timeStep*massInvForceVector[particleId*2];
-            velocityVector_[(particleId*2)+1] = velocityVector_[(particleId*2)+1] + params_.timeStep*massInvForceVector[(particleId*2)+1];
-        }
-    }
-    else if (params_.integrator == params_.TI_IMPLICIT_EULER)
-    {
-        int i;
-        Eigen::VectorXd deltaX;
-        Eigen::VectorXd xTildaVector = qVector_;
-        Eigen::VectorXd Fval;
-        Eigen::SparseMatrix<double> deltaF(particles_.size()*2, particles_.size()*2);
-//        cout << "\n Q vector in:"<< qVector_;
-//        cout << "\n XTilda in :"<<xTildaVector;
-        Eigen::VectorXd totalForceVector = generateAllForces(xTildaVector, qPrevVector_);
-        Eigen::VectorXd massInvForceVector = getMassInverseMatrix()*totalForceVector;
-        Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - (params_.timeStep*params_.timeStep)*massInvForceVector;
-        for (i=0; i<params_.NewtonMaxIters; i++)
-        {
-            Eigen::SparseMatrix<double> I(particles_.size()*2, particles_.size()*2);
-            I.setIdentity();
-            deltaF = I - params_.timeStep*params_.timeStep*getMassInverseMatrix()*(generateAllGradients(xTildaVector, qPrevVector_));
-            deltaF = deltaF*(-1);
-            BiCGSTAB< SparseMatrix<double> > solver;
-            solver.compute(deltaF);
-            deltaX = solver.solve(Fval);
-//            cout << "\nDeltaX:"<< deltaX;
-            xTildaVector = xTildaVector + deltaX;
-            totalForceVector = generateAllForces(xTildaVector, qPrevVector_);
-            massInvForceVector = getMassInverseMatrix()*totalForceVector;
+            int i;
+            Eigen::VectorXd deltaX;
+            Eigen::VectorXd xTildaVector = qVector_;
+            Eigen::VectorXd Fval;
+            Eigen::SparseMatrix<double> deltaF(particles_.size()*2, particles_.size()*2);
+            Eigen::VectorXd totalForceVector = generateAllForces(xTildaVector, qPrevVector_);
+            Eigen::VectorXd massInvForceVector = getMassInverseMatrix()*totalForceVector;
             Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - (params_.timeStep*params_.timeStep)*massInvForceVector;
-            if (Fval.norm() < params_.NewtonTolerance)
+            for (i=0; i<params_.NewtonMaxIters; i++)
             {
-                break;
+                Eigen::SparseMatrix<double> I(particles_.size()*2, particles_.size()*2);
+                I.setIdentity();
+                deltaF = I - params_.timeStep*params_.timeStep*getMassInverseMatrix()*(generateAllGradients(xTildaVector, qPrevVector_));
+                deltaF = deltaF*(-1);
+                BiCGSTAB< SparseMatrix<double> > solver;
+                solver.compute(deltaF);
+                deltaX = solver.solve(Fval);
+                xTildaVector = xTildaVector + deltaX;
+                totalForceVector = generateAllForces(xTildaVector, qPrevVector_);
+                massInvForceVector = getMassInverseMatrix()*totalForceVector;
+                Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - (params_.timeStep*params_.timeStep)*massInvForceVector;
+                if (Fval.norm() < params_.NewtonTolerance)
+                {
+                    break;
+                }
             }
+            updateConfigVectorqPrev(qVector_);
+            velocityVector_ = (xTildaVector - qVector_)/params_.timeStep;
+            qVector_ = xTildaVector;
         }
-//        cout << "\n Q vector out :"<< qVector_;
-//        cout << "\n XTilda out :"<<xTildaVector;
-        updateConfigVectorqPrev(qVector_);
-        velocityVector_ = (xTildaVector - qVector_)/params_.timeStep;
-        qVector_ = xTildaVector;
-    }
-    else if (params_.integrator == params_.TI_IMPLICIT_MIDPOINT)
-    {
-        int i;
-        Eigen::VectorXd deltaX;
-        Eigen::VectorXd xTildaVector = qVector_;
-        Eigen::VectorXd xPlusQby2 = (xTildaVector + qVector_)/2;
-        Eigen::VectorXd Fval;
-        Eigen::SparseMatrix<double> deltaF(particles_.size()*2, particles_.size()*2);
-        Eigen::VectorXd totalForceVector = generateAllForces(xPlusQby2, qPrevVector_);
-        Eigen::VectorXd massInvForceVector = getMassInverseMatrix()*totalForceVector;
-        Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - ((params_.timeStep*params_.timeStep)/2)*massInvForceVector;
-        for (i=0; i<params_.NewtonMaxIters; i++)
+        else if (params_.integrator == params_.TI_IMPLICIT_MIDPOINT)
         {
-            Eigen::SparseMatrix<double> I(particles_.size()*2, particles_.size()*2);
-            I.setIdentity();
-            deltaF = I - ((params_.timeStep*params_.timeStep)/4)*getMassInverseMatrix()*(generateAllGradients(xPlusQby2, qPrevVector_));
-            deltaF = deltaF*(-1);
-            BiCGSTAB< SparseMatrix<double> > solver;
-            solver.compute(deltaF);
-            deltaX = solver.solve(Fval);
-            xTildaVector = xTildaVector + deltaX;
-            totalForceVector = generateAllForces(xPlusQby2, qPrevVector_);
-            massInvForceVector = getMassInverseMatrix()*totalForceVector;
+            int i;
+            Eigen::VectorXd deltaX;
+            Eigen::VectorXd xTildaVector = qVector_;
+            Eigen::VectorXd xPlusQby2 = (xTildaVector + qVector_)/2;
+            Eigen::VectorXd Fval;
+            Eigen::SparseMatrix<double> deltaF(particles_.size()*2, particles_.size()*2);
+            Eigen::VectorXd totalForceVector = generateAllForces(xPlusQby2, qPrevVector_);
+            Eigen::VectorXd massInvForceVector = getMassInverseMatrix()*totalForceVector;
             Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - ((params_.timeStep*params_.timeStep)/2)*massInvForceVector;
-            if (Fval.norm() < params_.NewtonTolerance)
+            for (i=0; i<params_.NewtonMaxIters; i++)
             {
-                break;
+                Eigen::SparseMatrix<double> I(particles_.size()*2, particles_.size()*2);
+                I.setIdentity();
+                deltaF = I - ((params_.timeStep*params_.timeStep)/4)*getMassInverseMatrix()*(generateAllGradients(xPlusQby2, qPrevVector_));
+                deltaF = deltaF*(-1);
+                BiCGSTAB< SparseMatrix<double> > solver;
+                solver.compute(deltaF);
+                deltaX = solver.solve(Fval);
+                xTildaVector = xTildaVector + deltaX;
+                totalForceVector = generateAllForces(xPlusQby2, qPrevVector_);
+                massInvForceVector = getMassInverseMatrix()*totalForceVector;
+                Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - ((params_.timeStep*params_.timeStep)/2)*massInvForceVector;
+                if (Fval.norm() < params_.NewtonTolerance)
+                {
+                    break;
+                }
             }
+            updateConfigVectorqPrev(qVector_);
+            velocityVector_ = (xTildaVector - qVector_)/params_.timeStep;
+            qVector_ = xTildaVector;
         }
-        updateConfigVectorqPrev(qVector_);
-        velocityVector_ = (xTildaVector - qVector_)/params_.timeStep;
-        qVector_ = xTildaVector;
+        updateParticlePosFromQ(qVector_);
+        updateParticleVelFromV(velocityVector_);
+        snapSprings();
+        checkSawCollisions();
+        removeOutsideParticles();
+        reAlignParticlesAndSprings();
     }
-    updateParticlePosFromQ(qVector_);
-    updateParticleVelFromV(velocityVector_);
-    snapSprings();
-    checkSawCollisions();
-//    removeOutsideParticles();
-    reAlignParticlesAndSprings();
+    renderLock_.unlock();
 }
 
 void Simulation::addParticle(double x, double y)
@@ -326,6 +324,8 @@ Eigen::SparseMatrix<double> Simulation::getMassInverseMatrix()
 void Simulation::updateConfigVectorqPrev(Eigen::VectorXd qConfig)
 {
     int particleId;
+    qPrevVector_.resize(qConfig.rows());
+    qPrevVector_.setZero();
     for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
     {
         particleId = it - particles_.begin();
@@ -438,9 +438,9 @@ Eigen::VectorXd Simulation::generateSpringForce(Eigen::VectorXd qConfig)
     double tempForce;
     int pi;
     int pj;
-//    cout<<"\n qConfig Size : " << qConfig.rows();
-//    cout<<"\n qPrev Size : " << qPrevVector_.rows();
-//    cout<<"\n\n Particles Size : " << particles_.size();
+    cout<<"\n\n Particles Size : " << particles_.size();
+    cout<<"\n qConfig Size : " << qConfig.rows();
+    cout<<"\n qPrev Size : " << qPrevVector_.rows();
     Eigen::VectorXd springForceVector(qConfig.rows());
     springForceVector.setZero();
     if ((params_.activeForces & 2)==0)
@@ -453,9 +453,6 @@ Eigen::VectorXd Simulation::generateSpringForce(Eigen::VectorXd qConfig)
         pj = it->p2PosInQVector;
         L =  it->restLength;
         Kij = params_.springStiffness/L;
-//        cout<<"\nHere2";
-//        cout<<"\n qConfig Size : " << qConfig.rows();
-//        cout<< "\n pi pj : "<<pi<<" "<< pj;
         Xi = qConfig[pi*2];
         Yi = qConfig[(pi*2)+1];
         Xj = qConfig[pj*2];
@@ -672,33 +669,29 @@ void Simulation::snapSprings()
 void Simulation::checkSawCollisions()
 {
     // TODO : Implement check saw collision
-    for (vector<Saw>::iterator itSaw = saws_.begin(); itSaw != saws_.end(); ++itSaw)
+    for (vector<Saw>::iterator itSaw = saws_.begin(); itSaw != saws_.end(); itSaw++)
     {
-        // Check for Saw - Particle Collision. Remove Particle and all connected Springs.
-//        for (vector<Particle>::iterator itParticle = particles_.begin(); itParticle != particles_.end();)
-//        {
-//            if (sqrt(euclideanDistanceFormula(itSaw->pos[0], itSaw->pos[1], itParticle->pos[0], itParticle->pos[1])) < (itSaw->radius + itParticle->radius))
-//            {
-//                reAlignPrevQVector(particles_.begin() - itParticle);
-//                itParticle = particles_.erase(itParticle);
-//                // Destroy Particle and check for springs attached and destroy those.
-//                for (vector<SpringComponent>::iterator itSpring = springs_.begin(); itSpring != springs_.end();)
-//                {
-//                    if (itSpring->p1Id == itParticle->id || itSpring->p2Id == itParticle->id)
-//                    {
-//                        itSpring = springs_.erase(itSpring);
-//                    }
-//                    else
-//                    {
-//                        ++itSpring;
-//                    }
-//                }
-//            }
-//            else
-//            {
-//                ++itParticle;
-//            }
-//        }
+        double radiusSaw = itSaw->radius;
+        int i = 0;
+        for (i = particles_.size()-1; i>=0; i--)
+        {
+            double distBetweenParticleSaw = sqrt(euclideanDistanceFormula(itSaw->pos[0], itSaw->pos[1], particles_[i].pos[0], particles_[i].pos[1]));
+            if (distBetweenParticleSaw <= (radiusSaw + particles_[i].radius))
+            {
+                for (vector<SpringComponent>::iterator itSpring = springs_.begin(); itSpring != springs_.end();)
+                {
+                    if (itSpring->p1Id == particles_[i].id || itSpring->p2Id == particles_[i].id)
+                    {
+                        itSpring = springs_.erase(itSpring);
+                    }
+                    else
+                    {
+                        ++itSpring;
+                    }
+                }
+                particles_.erase(particles_.begin() + i);
+            }
+        }
         // Check for Saw - Spring collision. Only remove Spring and no particles.
         for (vector<SpringComponent>::iterator itSpring = springs_.begin(); itSpring != springs_.end();)
         {
@@ -811,19 +804,22 @@ void Simulation::reAlignPrevQVector(int index)
 void Simulation::removeOutsideParticles()
 {
     int i = 0;
-    for(i = 0; i<particles_.size(); )
+    for (i = particles_.size()-1; i>=0; i--)
     {
-        cout<<"\nX: Y :" <<particles_[i].pos[0]<< "  "<<particles_[i].pos[1];
         if (abs(particles_[i].pos[0])>1 || abs(particles_[i].pos[1])>1)
         {
-            cout<<"\nParticles Before : "<<particles_.size();
+            for (vector<SpringComponent>::iterator itSpring = springs_.begin(); itSpring != springs_.end();)
+            {
+                if (itSpring->p1Id == particles_[i].id || itSpring->p2Id == particles_[i].id)
+                {
+                    itSpring = springs_.erase(itSpring);
+                }
+                else
+                {
+                    ++itSpring;
+                }
+            }
             particles_.erase(particles_.begin() + i);
-            cout<<"\nParticles After : "<<particles_.size();
-            reAlignPrevQVector(i);
-        }
-        else
-        {
-            i++;
         }
     }
 }
