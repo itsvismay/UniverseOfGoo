@@ -1,0 +1,10 @@
+Universe of Goo by Kaivan Wadia and Vismay Modi
+
+Build the project by opening goo.pro in Qt and click on build or press Ctrl+R
+
+Creative Component:
+Animated Saws and color gradient on saws
+
+What's not working?
+
+Floor force is not working. Floor appears if you click on the floor option but particles just fall through it.

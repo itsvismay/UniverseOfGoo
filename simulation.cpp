@@ -27,53 +27,13 @@ void Simulation::render()
         if((params_.activeForces & 4)==4)
         {
             //draw floor
-            if(params_.simRunning)
+            glColor3f(0,1,0);
+            glBegin(GL_QUADS);
             {
-
-                glColor3f(0,1,0);
-                glBegin(GL_QUADS);
-                {
-                    glVertex2f(-1,floorHeight_);
-                    glVertex2f(1,floorHeight_);
-                    glVertex2f(1,-1);
-                    glVertex2f(-1,-1);
-                }
-                glEnd();
-            }
-            else
-            {
-                glColor3f(0,0.5,0);
-                glBegin(GL_QUADS);
-                {
-                    glVertex2f(-1,floorHeight_);
-                    glVertex2f(1,floorHeight_);
-                    glVertex2f(1,-1);
-                    glVertex2f(-1,-1);
-                }
-                glEnd();
-            }
-
-        }
-
-
-        for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
-        {
-            double radius = baseradius*sqrt(it->mass);
-            radius *= (1.0 + pulsefactor*sin(pulsespeed*time_));
-
-            glColor3f(0,0,0);
-            if (it->fixed)
-            {
-                glColor3f(1,0,0);
-            }
-            glBegin(GL_TRIANGLE_FAN);
-            {
-                glVertex2f(it->pos[0], it->pos[1]);
-                for(int i=0; i<=numcirclewedges; i++)
-                {
-                    glVertex2f(it->pos[0] + radius * cos(2*PI*i/numcirclewedges),
-                               it->pos[1] + radius * sin(2*PI*i/numcirclewedges));
-                }
+                glVertex2f(-1,floorHeight_);
+                glVertex2f(1,floorHeight_);
+                glVertex2f(1,-1);
+                glVertex2f(-1,-1);
             }
             glEnd();
         }
@@ -132,8 +92,30 @@ void Simulation::render()
             glColor3f(0,0,1);
             glBegin(GL_LINES);
             {
-                glVertex2f(particles_[it->p1Id].pos[0],particles_[it->p1Id].pos[1]);
-                glVertex2f(particles_[it->p2Id].pos[0], particles_[it->p2Id].pos[1]);
+                glVertex2f(particles_[it->p1PosInQVector].pos[0],particles_[it->p1PosInQVector].pos[1]);
+                glVertex2f(particles_[it->p2PosInQVector].pos[0], particles_[it->p2PosInQVector].pos[1]);
+            }
+            glEnd();
+        }
+
+        for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
+        {
+            double radius = baseradius*sqrt(it->mass);
+            radius *= (1.0 + pulsefactor*sin(pulsespeed*time_));
+
+            glColor3f(0,0,0);
+            if (it->fixed)
+            {
+                glColor3f(1,0,0);
+            }
+            glBegin(GL_TRIANGLE_FAN);
+            {
+                glVertex2f(it->pos[0], it->pos[1]);
+                for(int i=0; i<=numcirclewedges; i++)
+                {
+                    glVertex2f(it->pos[0] + radius * cos(2*PI*i/numcirclewedges),
+                               it->pos[1] + radius * sin(2*PI*i/numcirclewedges));
+                }
             }
             glEnd();
         }
@@ -266,6 +248,14 @@ void Simulation::addParticle(double x, double y)
     renderLock_.lock();
     {
         Vector2d newpos(x,y);
+        for (int i = 0; i < particles_.size(); i++)
+        {
+            if (particles_[i].pos[0] == x && particles_[i].pos[1] == y)
+            {
+                renderLock_.unlock();
+                return;
+            }
+        }
         double mass = params_.particleMass;
         double radius = 0.02*sqrt(mass);
         if(!params_.F_FLOOR || y>floorHeight_)
@@ -441,6 +431,7 @@ Eigen::VectorXd Simulation::generateSpringForce(Eigen::VectorXd qConfig)
     cout<<"\n\n Particles Size : " << particles_.size();
     cout<<"\n qConfig Size : " << qConfig.rows();
     cout<<"\n qPrev Size : " << qPrevVector_.rows();
+    cout<<"\n Particles : " << particles_[0].pos[0] <<endl;
     Eigen::VectorXd springForceVector(qConfig.rows());
     springForceVector.setZero();
     if ((params_.activeForces & 2)==0)
@@ -689,6 +680,7 @@ void Simulation::checkSawCollisions()
                         ++itSpring;
                     }
                 }
+                reAlignPrevQVector(i);
                 particles_.erase(particles_.begin() + i);
             }
         }
@@ -819,6 +811,7 @@ void Simulation::removeOutsideParticles()
                     ++itSpring;
                 }
             }
+            reAlignPrevQVector(i);
             particles_.erase(particles_.begin() + i);
         }
     }
