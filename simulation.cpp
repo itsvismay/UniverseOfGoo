@@ -27,15 +27,32 @@ void Simulation::render()
         if((params_.activeForces & 4)==4)
         {
             //draw floor
-            glColor3f(0, 1, 0);
-            glBegin(GL_QUADS);
+            if(params_.simRunning)
             {
-                glVertex2f(-1,floorHeight_);
-                glVertex2f(1,floorHeight_);
-                glVertex2f(1,-1);
-                glVertex2f(-1,-1);
+
+                glColor3f(0,1,0);
+                glBegin(GL_QUADS);
+                {
+                    glVertex2f(-1,floorHeight_);
+                    glVertex2f(1,floorHeight_);
+                    glVertex2f(1,-1);
+                    glVertex2f(-1,-1);
+                }
+                glEnd();
             }
-            glEnd();
+            else
+            {
+                glColor3f(0,0.5,0);
+                glBegin(GL_QUADS);
+                {
+                    glVertex2f(-1,floorHeight_);
+                    glVertex2f(1,floorHeight_);
+                    glVertex2f(1,-1);
+                    glVertex2f(-1,-1);
+                }
+                glEnd();
+            }
+
         }
 
 
@@ -63,15 +80,48 @@ void Simulation::render()
 
         for(vector<Saw>::iterator it = saws_.begin(); it != saws_.end(); ++it)
         {
+            flip++;
+            flip = flip%10;
             double radius = it->radius;
             glColor3f(0.5, 0.5, 0.5);
             glBegin(GL_TRIANGLE_FAN);
             {
                 glVertex2f(it->pos[0], it->pos[1]);
+                for(int i=0; i<=numcirclewedges;)
+                {
+                    glColor3f(flip*params_.timeStep, flip*params_.timeStep, flip*params_.timeStep);
+                    if(params_.simRunning)
+                    {
+                        if(flip/2 ==0)
+                        {
+
+                            glVertex2f(it->pos[0]+ radius * cos(2*PI*(i+1)/numcirclewedges), it->pos[1] + radius * sin(2*PI*(i+1)/numcirclewedges));
+                            glVertex2f(it->pos[0]+ (radius*1.05) * cos(2*PI*i/numcirclewedges), it->pos[1] + (radius*1.05) * sin(2*PI*i/numcirclewedges));
+                        }
+                        else
+                        {
+
+                            glVertex2f(it->pos[0]+ (radius*1.05) * cos(2*PI*(i+1)/numcirclewedges), it->pos[1] + (radius*1.05) * sin(2*PI*(i+1)/numcirclewedges));
+                            glVertex2f(it->pos[0]+ (radius) * cos(2*PI*i/numcirclewedges), it->pos[1] + (radius) * sin(2*PI*i/numcirclewedges));
+                        }
+                    }
+                    else
+                    {
+                        glVertex2f(it->pos[0]+ (radius*1.05) * cos(2*PI*i/numcirclewedges), it->pos[1] + (radius*1.05) * sin(2*PI*i/numcirclewedges));
+                        glVertex2f(it->pos[0]+ radius * cos(2*PI*(i+1)/numcirclewedges), it->pos[1] + radius * sin(2*PI*(i+1)/numcirclewedges));
+                    }
+                    i+=2;
+                }
+            }
+            glEnd();
+            glColor3f(1,1,1);
+            glBegin(GL_TRIANGLE_FAN);
+            {
+                glVertex2f(it->pos[0], it->pos[1]);
                 for(int i=0; i<=numcirclewedges; i++)
                 {
-                    glVertex2f(it->pos[0]+ radius * cos(2*PI*i/numcirclewedges),
-                               it->pos[1] + radius * sin(2*PI*i/numcirclewedges));
+                    glVertex2f(it->pos[0] + 0.25*radius * cos(2*PI*i/numcirclewedges),
+                               it->pos[1] + 0.25*radius * sin(2*PI*i/numcirclewedges));
                 }
             }
             glEnd();
@@ -95,7 +145,6 @@ void Simulation::takeSimulationStep()
 {
     time_ += params_.timeStep;
 
-    removeOutsideParticles();
     updateConfigVectorq();
     updateConfigVectorVel();
 
@@ -107,7 +156,7 @@ void Simulation::takeSimulationStep()
         updateConfigVectorqPrev(qVector_);
         for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
         {
-            particleId = it->id;
+            particleId = it - particles_.begin();
             qVector_[particleId*2] = qVector_[particleId*2] + params_.timeStep*velocityVector_[particleId*2];
             qVector_[(particleId*2)+1] = qVector_[(particleId*2)+1] + params_.timeStep*velocityVector_[(particleId*2)+1];
             velocityVector_[particleId*2] = velocityVector_[particleId*2] + params_.timeStep*massInvForceVector[particleId*2];
@@ -120,7 +169,7 @@ void Simulation::takeSimulationStep()
         int particleId = 0;
         for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
         {
-            particleId = it->id;
+            particleId = it - particles_.begin();
             qVector_[particleId*2] = qVector_[particleId*2] + params_.timeStep*velocityVector_[particleId*2];
             qVector_[(particleId*2)+1] = qVector_[(particleId*2)+1] + params_.timeStep*velocityVector_[(particleId*2)+1];
         }
@@ -131,7 +180,7 @@ void Simulation::takeSimulationStep()
         // Use the q(i+1) to generate Force and update velocitites
         for (vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
         {
-            particleId = it->id;
+            particleId = it - particles_.begin();
             velocityVector_[particleId*2] = velocityVector_[particleId*2] + params_.timeStep*massInvForceVector[particleId*2];
             velocityVector_[(particleId*2)+1] = velocityVector_[(particleId*2)+1] + params_.timeStep*massInvForceVector[(particleId*2)+1];
         }
@@ -143,15 +192,13 @@ void Simulation::takeSimulationStep()
         Eigen::VectorXd xTildaVector = qVector_;
         Eigen::VectorXd Fval;
         Eigen::SparseMatrix<double> deltaF(particles_.size()*2, particles_.size()*2);
-        cout << "\n Q vector in:"<< qVector_;
-        cout << "\n XTilda in :"<<xTildaVector;
-        updateConfigVectorqPrev(qVector_);
+//        cout << "\n Q vector in:"<< qVector_;
+//        cout << "\n XTilda in :"<<xTildaVector;
         Eigen::VectorXd totalForceVector = generateAllForces(xTildaVector, qPrevVector_);
         Eigen::VectorXd massInvForceVector = getMassInverseMatrix()*totalForceVector;
         Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - (params_.timeStep*params_.timeStep)*massInvForceVector;
         for (i=0; i<params_.NewtonMaxIters; i++)
         {
-//            totalForceVector = generateAllForces(xTildaVector, qPrevVector_);
             Eigen::SparseMatrix<double> I(particles_.size()*2, particles_.size()*2);
             I.setIdentity();
             deltaF = I - params_.timeStep*params_.timeStep*getMassInverseMatrix()*(generateAllGradients(xTildaVector, qPrevVector_));
@@ -159,7 +206,7 @@ void Simulation::takeSimulationStep()
             BiCGSTAB< SparseMatrix<double> > solver;
             solver.compute(deltaF);
             deltaX = solver.solve(Fval);
-            cout << "\nDeltaX:"<< deltaX;
+//            cout << "\nDeltaX:"<< deltaX;
             xTildaVector = xTildaVector + deltaX;
             totalForceVector = generateAllForces(xTildaVector, qPrevVector_);
             massInvForceVector = getMassInverseMatrix()*totalForceVector;
@@ -169,8 +216,42 @@ void Simulation::takeSimulationStep()
                 break;
             }
         }
-        cout << "\n Q vector out :"<< qVector_;
-        cout << "\n XTilda out :"<<xTildaVector;
+//        cout << "\n Q vector out :"<< qVector_;
+//        cout << "\n XTilda out :"<<xTildaVector;
+        updateConfigVectorqPrev(qVector_);
+        velocityVector_ = (xTildaVector - qVector_)/params_.timeStep;
+        qVector_ = xTildaVector;
+    }
+    else if (params_.integrator == params_.TI_IMPLICIT_MIDPOINT)
+    {
+        int i;
+        Eigen::VectorXd deltaX;
+        Eigen::VectorXd xTildaVector = qVector_;
+        Eigen::VectorXd xPlusQby2 = (xTildaVector + qVector_)/2;
+        Eigen::VectorXd Fval;
+        Eigen::SparseMatrix<double> deltaF(particles_.size()*2, particles_.size()*2);
+        Eigen::VectorXd totalForceVector = generateAllForces(xPlusQby2, qPrevVector_);
+        Eigen::VectorXd massInvForceVector = getMassInverseMatrix()*totalForceVector;
+        Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - ((params_.timeStep*params_.timeStep)/2)*massInvForceVector;
+        for (i=0; i<params_.NewtonMaxIters; i++)
+        {
+            Eigen::SparseMatrix<double> I(particles_.size()*2, particles_.size()*2);
+            I.setIdentity();
+            deltaF = I - ((params_.timeStep*params_.timeStep)/4)*getMassInverseMatrix()*(generateAllGradients(xPlusQby2, qPrevVector_));
+            deltaF = deltaF*(-1);
+            BiCGSTAB< SparseMatrix<double> > solver;
+            solver.compute(deltaF);
+            deltaX = solver.solve(Fval);
+            xTildaVector = xTildaVector + deltaX;
+            totalForceVector = generateAllForces(xPlusQby2, qPrevVector_);
+            massInvForceVector = getMassInverseMatrix()*totalForceVector;
+            Fval = xTildaVector - qVector_ - params_.timeStep*velocityVector_ - ((params_.timeStep*params_.timeStep)/2)*massInvForceVector;
+            if (Fval.norm() < params_.NewtonTolerance)
+            {
+                break;
+            }
+        }
+        updateConfigVectorqPrev(qVector_);
         velocityVector_ = (xTildaVector - qVector_)/params_.timeStep;
         qVector_ = xTildaVector;
     }
@@ -178,6 +259,8 @@ void Simulation::takeSimulationStep()
     updateParticleVelFromV(velocityVector_);
     snapSprings();
     checkSawCollisions();
+//    removeOutsideParticles();
+    reAlignParticlesAndSprings();
 }
 
 void Simulation::addParticle(double x, double y)
@@ -186,13 +269,14 @@ void Simulation::addParticle(double x, double y)
     {
         Vector2d newpos(x,y);
         double mass = params_.particleMass;
+        double radius = 0.02*sqrt(mass);
         if(!params_.F_FLOOR || y>floorHeight_)
         {
-            particles_.push_back(Particle(newpos, mass, params_.particleFixed));
+            particles_.push_back(Particle(newpos, mass, params_.particleFixed, radius));
             //Build the configuration vectors.
             qVector_.resize(qVector_.rows()+2);
-            qPrevVector_.resize(qVector_.rows()+2);
-            velocityVector_.resize(qVector_.rows()+2);
+            qPrevVector_.resize(qPrevVector_.rows()+2);
+            velocityVector_.resize(velocityVector_.rows()+2);
             qVector_[qVector_.rows()-2] = newpos[0];
             qVector_[qVector_.rows()-1] = newpos[1];
             qPrevVector_[qPrevVector_.rows()-2] = newpos[0];
@@ -208,11 +292,10 @@ void Simulation::addParticle(double x, double y)
                 double distance = sqrt(((x1x2*x1x2)+(y1y2*y1y2)));
                 if(params_.maxSpringDist >= distance)
                 {
-                    springs_.push_back(SpringComponent(particles_[i].id, particles_[particles_.size()-1].id, distance));
+                    springs_.push_back(SpringComponent(particles_[i].id, particles_[particles_.size()-1].id, distance, i, particles_.size()-1));
                 }
             }
         }
-
     }
     renderLock_.unlock();
 }
@@ -225,7 +308,7 @@ Eigen::SparseMatrix<double> Simulation::getMassInverseMatrix()
     double mass;
     for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
     {
-        particleId = it->id;
+        particleId = it - particles_.begin();
         if (it->fixed)
         {
             mass = numeric_limits<double>::infinity();
@@ -245,7 +328,7 @@ void Simulation::updateConfigVectorqPrev(Eigen::VectorXd qConfig)
     int particleId;
     for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
     {
-        particleId = it->id;
+        particleId = it - particles_.begin();
         qPrevVector_[particleId*2] = qConfig[particleId*2];
         qPrevVector_[(particleId*2)+1] = qConfig[(particleId*2)+1];
     }
@@ -258,7 +341,7 @@ void Simulation::updateConfigVectorq()
     qVector_.resize(particles_.size()*2);
     for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
     {
-        particleId = it->id;
+        particleId = it - particles_.begin();
         qVector_[particleId*2] = it->pos[0];
         qVector_[(particleId*2) + 1] = it->pos[1];
     }
@@ -271,7 +354,7 @@ void Simulation::updateConfigVectorVel()
     velocityVector_.resize(particles_.size()*2);
     for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
     {
-        particleId = it->id;
+        particleId = it - particles_.begin();
         velocityVector_[particleId*2] = it->vel[0];
         velocityVector_[(particleId*2) + 1] = it->vel[1];
     }
@@ -282,7 +365,7 @@ void Simulation::updateParticlePosFromQ(Eigen::VectorXd qConfig)
     int particleId;
     for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
     {
-        particleId = it->id;
+        particleId = it - particles_.begin();
         it->pos[0] = qConfig[particleId*2];
         it->pos[1] = qConfig[(particleId*2) + 1];
     }
@@ -293,7 +376,7 @@ void Simulation::updateParticleVelFromV(Eigen::VectorXd vConfig)
     int particleId = 0;
     for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
     {
-        particleId = it->id;
+        particleId = it - particles_.begin();
         it->vel[0] = vConfig[particleId*2];
         it->vel[1] = vConfig[(particleId*2) + 1];
     }
@@ -321,7 +404,7 @@ Eigen::VectorXd Simulation::generateGrForce(Eigen::VectorXd qConfig)
     }
     for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end(); ++it)
     {
-        particleId = it->id;
+        particleId = it - particles_.begin();
         if (it->fixed)
         {
             gravityForceVector[particleId*2] = 0.0;
@@ -345,7 +428,6 @@ Eigen::SparseMatrix<double> Simulation::generateGravityForceGradient(Eigen::Vect
 
 Eigen::VectorXd Simulation::generateSpringForce(Eigen::VectorXd qConfig)
 {
-
     double Kij;
     double L;
     double p1p2euclideanDistance;
@@ -356,6 +438,9 @@ Eigen::VectorXd Simulation::generateSpringForce(Eigen::VectorXd qConfig)
     double tempForce;
     int pi;
     int pj;
+//    cout<<"\n qConfig Size : " << qConfig.rows();
+//    cout<<"\n qPrev Size : " << qPrevVector_.rows();
+//    cout<<"\n\n Particles Size : " << particles_.size();
     Eigen::VectorXd springForceVector(qConfig.rows());
     springForceVector.setZero();
     if ((params_.activeForces & 2)==0)
@@ -364,10 +449,13 @@ Eigen::VectorXd Simulation::generateSpringForce(Eigen::VectorXd qConfig)
     }
     for (vector<SpringComponent>::iterator it = springs_.begin(); it != springs_.end(); ++it)
     {
-        pi = it->p1Id;
-        pj = it->p2Id;
+        pi = it->p1PosInQVector;
+        pj = it->p2PosInQVector;
         L =  it->restLength;
         Kij = params_.springStiffness/L;
+//        cout<<"\nHere2";
+//        cout<<"\n qConfig Size : " << qConfig.rows();
+//        cout<< "\n pi pj : "<<pi<<" "<< pj;
         Xi = qConfig[pi*2];
         Yi = qConfig[(pi*2)+1];
         Xj = qConfig[pj*2];
@@ -386,6 +474,10 @@ Eigen::SparseMatrix<double> Simulation::generateSpringForceGradient(Eigen::Vecto
 {
     Eigen::SparseMatrix<double> springForceGradient(particles_.size()*2, particles_.size()*2);
     springForceGradient.setZero();
+    if ((params_.activeForces & 2)==0)
+    {
+        return springForceGradient;
+    }
     vector< Triplet<double> > tripletList;
     tripletList.reserve(particles_.size()*2);
     double Kij;
@@ -415,8 +507,8 @@ Eigen::SparseMatrix<double> Simulation::generateSpringForceGradient(Eigen::Vecto
     int Pj;
     for (vector<SpringComponent>::iterator it = springs_.begin(); it != springs_.end(); ++it)
     {
-        Pi = it->p1Id;
-        Pj = it->p2Id;
+        Pi = it->p1PosInQVector;
+        Pj = it->p2PosInQVector;
         Xi = qConfig[Pi*2];
         Yi = qConfig[(Pi*2)+1];
         Xj = qConfig[Pj*2];
@@ -491,8 +583,8 @@ Eigen::VectorXd Simulation::generateViscousDampingForce(Eigen::VectorXd qConfig,
     }
     for (vector<SpringComponent>::iterator it = springs_.begin(); it != springs_.end(); ++it)
     {
-        pi = it->p1Id;
-        pj = it->p2Id;
+        pi = it->p1PosInQVector;
+        pj = it->p2PosInQVector;
         p1Xi = qConfig[pi*2];
         p1Yi = qConfig[(pi*2)+1];
         p2Xi = qConfig[pj*2];
@@ -516,14 +608,18 @@ Eigen::SparseMatrix<double> Simulation::generateViscousDampingGradient(VectorXd 
 {
     Eigen::SparseMatrix<double> visDampingForceGradient(particles_.size()*2, particles_.size()*2);
     visDampingForceGradient.setZero();
+    if ((params_.activeForces & 2)==0)
+    {
+        return visDampingForceGradient;
+    }
     vector< Triplet<double> > tripletList;
     double KbyH = -params_.dampingStiffness/params_.timeStep;
     int Pi;
     int Pj;
     for (vector<SpringComponent>::iterator it = springs_.begin(); it != springs_.end(); ++it)
     {
-        Pi = it->p1Id;
-        Pj = it->p2Id;
+        Pi = it->p1PosInQVector;
+        Pj = it->p2PosInQVector;
 
         tripletList.push_back(Triplet<double>(2*Pi, 2*Pi, -KbyH));
         tripletList.push_back(Triplet<double>(2*Pi, (2*Pi)+1, 0));
@@ -547,21 +643,20 @@ Eigen::SparseMatrix<double> Simulation::generateViscousDampingGradient(VectorXd 
     }
     visDampingForceGradient.setFromTriplets(tripletList.begin(), tripletList.end());
     return visDampingForceGradient;
-
 }
 
 void Simulation::snapSprings()
 {
-    int p1Id;
-    int p2Id;
+    int pi;
+    int pj;
     double distance;
     double epsilon;
     for (vector<SpringComponent>::iterator it = springs_.begin(); it != springs_.end();)
     {
-        p1Id = it->p1Id;
-        p2Id = it->p2Id;
-        distance = sqrt((particles_[p1Id].pos[0]-particles_[p2Id].pos[0])*(particles_[p1Id].pos[0]-particles_[p2Id].pos[0])
-                        + (particles_[p1Id].pos[1]-particles_[p2Id].pos[1])*(particles_[p1Id].pos[1]-particles_[p2Id].pos[1]));
+        pi = it->p1PosInQVector;
+        pj = it->p2PosInQVector;
+        distance = sqrt((particles_[pi].pos[0]-particles_[pj].pos[0])*(particles_[pi].pos[0]-particles_[pj].pos[0])
+                        + (particles_[pi].pos[1]-particles_[pj].pos[1])*(particles_[pi].pos[1]-particles_[pj].pos[1]));
         epsilon = (distance - it->restLength)/it->restLength;
         if (epsilon > params_.maxSpringStrain)
         {
@@ -576,30 +671,49 @@ void Simulation::snapSprings()
 
 void Simulation::checkSawCollisions()
 {
-//    // TODO : Implement check saw collision
-//    for (vector<Saw>::iterator itSaw = saws_.begin(); it != saws_.end(); ++it)
-//    {
-//        // Check for Saw - Particle Collision. Remove Particle and all connected Springs.
-//        for (vector<Particle>::iterator itParticle = particles_.begin(); it != particles_.end(); ++it)
+    // TODO : Implement check saw collision
+    for (vector<Saw>::iterator itSaw = saws_.begin(); itSaw != saws_.end(); ++itSaw)
+    {
+        // Check for Saw - Particle Collision. Remove Particle and all connected Springs.
+//        for (vector<Particle>::iterator itParticle = particles_.begin(); itParticle != particles_.end();)
 //        {
-
-//            if (euclideanDistanceFormula(itSaw->pos[0], itSaw->pos[1], itParticle->pos[0], itParticle->pos[1]) < (itSaw->radius*itSaw->radius))
+//            if (sqrt(euclideanDistanceFormula(itSaw->pos[0], itSaw->pos[1], itParticle->pos[0], itParticle->pos[1])) < (itSaw->radius + itParticle->radius))
 //            {
+//                reAlignPrevQVector(particles_.begin() - itParticle);
+//                itParticle = particles_.erase(itParticle);
 //                // Destroy Particle and check for springs attached and destroy those.
+//                for (vector<SpringComponent>::iterator itSpring = springs_.begin(); itSpring != springs_.end();)
+//                {
+//                    if (itSpring->p1Id == itParticle->id || itSpring->p2Id == itParticle->id)
+//                    {
+//                        itSpring = springs_.erase(itSpring);
+//                    }
+//                    else
+//                    {
+//                        ++itSpring;
+//                    }
+//                }
 //            }
-
-//        }
-//        // Check for Saw - Spring collision. Only remove Spring and no particles.
-//        for (vector<Particle>::iterator itSpring = springs_.begin(); it != springs_.end(); ++it)
-//        {
-//            Eigen::Vector2d q1 = particles_[itSpring->p1Id].pos;
-//            Eigen::Vector2d q2 = particles_[itSpring->p2Id].pos;
-//            if (distanceFromFiniteLine(q1, q2, itSaw->pos) < itSaw->radius)
+//            else
 //            {
-//                // Destroy Spring
+//                ++itParticle;
 //            }
 //        }
-//    }
+        // Check for Saw - Spring collision. Only remove Spring and no particles.
+        for (vector<SpringComponent>::iterator itSpring = springs_.begin(); itSpring != springs_.end();)
+        {
+            Eigen::Vector2d q1 = particles_[itSpring->p1Id].pos;
+            Eigen::Vector2d q2 = particles_[itSpring->p2Id].pos;
+            if (distanceFromFiniteLine(q1, q2, itSaw->pos) < itSaw->radius)
+            {
+                itSpring = springs_.erase(itSpring);
+            }
+            else
+            {
+                ++itSpring;
+            }
+        }
+    }
 }
 
 double Simulation::euclideanDistanceFormula(double x1, double y1, double x2, double y2)
@@ -650,63 +764,83 @@ void Simulation::addSaw(double x, double y)
     renderLock_.unlock();
 }
 
+void Simulation::reAlignParticlesAndSprings()
+{
+    int i = 0;
+    for (vector<SpringComponent>::iterator itSpring = springs_.begin(); itSpring != springs_.end(); ++itSpring)
+    {
+        for (i = 0; i < particles_.size(); i++)
+        {
+            if (itSpring->p1Id == particles_[i].id)
+            {
+                itSpring->p1PosInQVector = i;
+            }
+            else if (itSpring->p2Id == particles_[i].id)
+            {
+                itSpring->p2PosInQVector = i;
+            }
+        }
+    }
+}
+
+void Simulation::reAlignPrevQVector(int index)
+{
+    Eigen::VectorXd qPrevVectorNew(qPrevVector_.rows()-2);
+    qPrevVectorNew.setZero();
+    int xPos = index*2;
+    int yPos = index*2 + 1;
+    int i = 0,j = 0;
+    while(i<qPrevVector_.rows())
+    {
+        if(i==xPos || i==yPos){
+            i++;
+            continue;
+        }
+        else
+        {
+            qPrevVectorNew[j]= qPrevVector_[i];
+            i++;
+            j++;
+        }
+    }
+    qPrevVector_.resize(qPrevVectorNew.rows());
+    qPrevVector_ = qPrevVectorNew;
+}
+
 // TODO : Remove particles outside the world.
 void Simulation::removeOutsideParticles()
 {
-    for(vector<Particle>::iterator it = particles_.begin(); it != particles_.end();)
+    int i = 0;
+    for(i = 0; i<particles_.size(); )
     {
-        if (abs(it->pos[0])>1 || abs(it->pos[1])>1)
+        cout<<"\nX: Y :" <<particles_[i].pos[0]<< "  "<<particles_[i].pos[1];
+        if (abs(particles_[i].pos[0])>1 || abs(particles_[i].pos[1])>1)
         {
-            cout <<"\n ID Generator Old: " <<idGenerator<< " Size Old:"<<particles_.size();
-            int IDtoDestroy = it->id;
-            it = particles_.erase(it);
-            this->destroyParticleReferences(IDtoDestroy);
-            this->updateParticleID();
-            cout <<"\n New Size: "<<springs_.size();
+            cout<<"\nParticles Before : "<<particles_.size();
+            particles_.erase(particles_.begin() + i);
+            cout<<"\nParticles After : "<<particles_.size();
+            reAlignPrevQVector(i);
         }
         else
         {
-            ++it;
+            i++;
         }
     }
 }
 
-void Simulation::destroyParticleReferences(int id)
+void Simulation::removeSpringsWithParticle(int particleId)
 {
-    //remove springs_ with particle
-    for(vector<SpringComponent>::iterator it = springs_.begin(); it !=springs_.end();)
+    for (vector<SpringComponent>::iterator itSpring = springs_.begin(); itSpring != springs_.end();)
     {
-        if(id==it->p1Id || id==it->p2Id)
+        if (itSpring->p1Id == particleId || itSpring->p2Id == particleId)
         {
-            it = springs_.erase(it);
+            itSpring = springs_.erase(itSpring);
         }
         else
         {
-            ++it;
+            ++itSpring;
         }
     }
-
-    int i = id*2;
-    int n = qPrevVector_.size()-(i)-1;
-    qPrevVector_.segment(i,n) = qPrevVector_.tail(n);
-    qPrevVector_.conservativeResize(qPrevVector_.size()-1);
-    n = qPrevVector_.size()-(i+1)-1;
-    qPrevVector_.segment(i,n) = qPrevVector_.tail(n);
-    qPrevVector_.conservativeResize(qPrevVector_.size()-1);
-
-    return;
-}
-
-void Simulation::updateParticleID()
-{
-    int i;
-    for(i=0; i<particles_.size(); i++)
-    {
-        particles_[i].id =i;
-    }
-    idGenerator = i;
-    cout <<"\n ID Generator New: " <<idGenerator<< " Size New:"<<particles_.size();
-    return;
 }
 
 void Simulation::clearScene()

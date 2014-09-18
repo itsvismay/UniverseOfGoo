@@ -15,16 +15,18 @@ static int idGenerator = 0;
 struct Particle
 {
 public:
-    Particle(Eigen::Vector2d pos, double mass, bool isFixed) : pos(pos), mass(mass), fixed(isFixed)
+    Particle(Eigen::Vector2d pos, double mass, bool isFixed, double radius) : pos(pos), mass(mass), fixed(isFixed), radius(radius)
     {
         vel.setZero();
         id = idGenerator;
         idGenerator++;
     }
     int id;
+    int posInVec;
     Eigen::Vector2d pos;
     Eigen::Vector2d vel;
     double mass;
+    double radius;
     bool fixed;
 };
 
@@ -44,13 +46,14 @@ public:
 struct SpringComponent
 {
 public:
-    SpringComponent(int p1, int p2, double restLength): p1Id(p1), p2Id(p2), restLength(restLength)
+    SpringComponent(int p1, int p2, double restLength, int posP1, int posP2): p1Id(p1), p2Id(p2), restLength(restLength), p1PosInQVector(posP1), p2PosInQVector(posP2)
     {
     }
     int p1Id;
     int p2Id;
+    int p1PosInQVector;
+    int p2PosInQVector;
     double restLength;
-
 };
 
 class Simulation
@@ -89,16 +92,18 @@ public:
 
     void snapSprings();
     void checkSawCollisions();
-
     void removeOutsideParticles();
-    void destroyParticleReferences(int id);
-    void updateParticleID();
+    void removeSpringsWithParticle(int particleId);
+
+    void reAlignParticlesAndSprings();
+    void reAlignPrevQVector(int index);
 
 
 private:
     const SimParameters &params_;
     QMutex renderLock_;
 
+    int flip;
     double time_;
     const double floorHeight_;
     std::vector< std::vector< Particle > > ConnectedParticles_;
